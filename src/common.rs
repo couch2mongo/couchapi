@@ -71,3 +71,137 @@ pub async fn add_if_match<B>(mut req: Request<B>, next: Next<B>) -> Result<Respo
 
     Ok(next.run(req).await)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::routing::get;
+    use axum::{middleware, Extension, Router, Server};
+    use http::header::HeaderValue;
+    use std::net::TcpListener;
+
+    // Basic handler for testing
+    async fn handler() -> &'static str {
+        "OK"
+    }
+
+    #[tokio::test]
+    async fn test_not_implemented_handler() {
+        let req: Request<Body> = Request::default();
+        let res = not_implemented_handler(req).await;
+        assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
+    }
+
+    #[tokio::test]
+    async fn test_always_add_must_revalidate() {
+        let app = Router::new()
+            .route("/", get(handler))
+            .layer(middleware::from_fn(always_add_must_revalidate));
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async {
+            Server::from_tcp(listener)
+                .unwrap()
+                .serve(app.into_make_service())
+                .await
+                .unwrap()
+        });
+
+        let client = reqwest::Client::new();
+        let res = client.get(format!("http://{}", addr)).send().await.unwrap();
+        assert_eq!(res.headers()["Cache-Control"], "must-revalidate");
+    }
+
+    // Test add_server_header
+    #[tokio::test]
+    async fn test_add_server_header() {
+        let app = Router::new()
+            .route("/", get(handler))
+            .layer(middleware::from_fn(add_server_header));
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async {
+            Server::from_tcp(listener)
+                .unwrap()
+                .serve(app.into_make_service())
+                .await
+                .unwrap()
+        });
+
+        let client = reqwest::Client::new();
+        let res = client.get(format!("http://{}", addr)).send().await.unwrap();
+        assert_eq!(
+            res.headers()["Server"],
+            HeaderValue::from_static("CouchDB to MongoDB Emulator Proxy")
+        );
+    }
+
+    async fn if_none_match_handler(Extension(if_none_match): Extension<IfNoneMatch>) -> String {
+        if_none_match.0.unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn test_add_if_none_match() {
+        let app = Router::new()
+            .route("/", get(if_none_match_handler))
+            .route_layer(middleware::from_fn(add_if_none_match));
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async {
+            Server::from_tcp(listener)
+                .unwrap()
+                .serve(app.into_make_service())
+                .await
+                .unwrap()
+        });
+
+        let client = reqwest::Client::new();
+        let res = client
+            .get(format!("http://{}", addr))
+            .header("If-None-Match", "\"12345\"")
+            .send()
+            .await
+            .unwrap();
+
+        let text = res.text().await.unwrap();
+        assert_eq!(text, "\"12345\"");
+    }
+
+    async fn if_match_handler(Extension(if_match): Extension<IfMatch>) -> String {
+        if_match.0.unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn test_add_if_match() {
+        let app = Router::new()
+            .route("/", get(if_match_handler))
+            .route_layer(middleware::from_fn(add_if_match));
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async {
+            Server::from_tcp(listener)
+                .unwrap()
+                .serve(app.into_make_service())
+                .await
+                .unwrap()
+        });
+
+        let client = reqwest::Client::new();
+        let res = client
+            .get(format!("http://{}", addr))
+            .header("If-Match", "\"12345\"")
+            .send()
+            .await
+            .unwrap();
+
+        let text = res.text().await.unwrap();
+        assert_eq!(text, "\"12345\"");
+    }
+}

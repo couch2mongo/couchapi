@@ -10,7 +10,9 @@ tokio = { version = "1.27.0", features = ["full"] }
 futures-util = "0.3.28"
 async-trait = "0.1.68"
 axum = "0.6.18"
+hyper = "0.14.27"
 tower-http = { version = "0.4.1", features = ["trace"] }
+reqwest = "0.11.18"
 
 # MongoDB
 bson = "2.6.1"
@@ -33,3 +35,4 @@ clap = { version = "4.3.0", features = ["derive"] }
 
 [dev-dependencies]
 mockall = "0.11.4"
+assert-json-diff = "2.0.2"
