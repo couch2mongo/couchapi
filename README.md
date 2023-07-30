@@ -1,14 +1,35 @@
 # CouchAPI
 
-Why not pretend to be CouchDB (or Cloudant) and talk to MongoDB?
+A shift from Apache CouchDB to MongoDB addresses the need for superior
+scalability, flexibility, and efficiency. With the innovative use of a proxy
+layer developed in Rust, a modern systems programming language, this migration
+can be significantly simplified, making the transition seamless and efficient.
 
-**WARNING: THERE ARE STILL MANY DRAGONS**
+## Proxy Approach and Rust: A Perfect Symbiosis
 
-This should all work and I have tested it. It's fast - you should try it!
+A proxy layer serves as an intermediary, translating CouchDB API calls and
+queries into MongoDB's syntax. Implementing this layer in Rust brings the
+adds advantages of Rust's strong performance, reliability,
+and its ‘zero-cost abstraction’ principle, which ensures that abstractions
+do not incur runtime costs.
+
+## Benefits of the Rust-Based Proxy Approach
+
+1. **Efficient Migration**: With Rust's emphasis on performance and memory
+   safety, the proxy layer can handle high loads and complex translations with
+   efficiency and without crashes or security vulnerabilities, ensuring a
+   smooth migration process.
+2. **Code Preservation**: By using the Rust-based proxy, existing application
+   code remains largely untouched. This significantly reduces the time, cost,
+   and potential errors associated with substantial code rewrites, making the
+   migration process more manageable.
+3. **Error Handling**: Rust’s rich type system and its "panic" mechanism allow
+   the proxy to catch and handle errors gracefully, reducing the likelihood
+   of runtime errors during the migration.
 
 ## Requirements
 
-You need both Rust Stable and Nightly!
+You need both Rust Stable and Nightly (we only use Nightly for rustfmt)!
 
 ```bash
 rustup update stable
@@ -30,8 +51,6 @@ cargo run -- --help
 See `config.toml` for an example configuration file.
 
 ## Usage
-
-**Warning**: We don't support 'views' yet. Only basic CRUD operations are supported.
 
 Whenever you see a dbname, it means a collection.
 
