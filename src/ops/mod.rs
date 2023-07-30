@@ -48,7 +48,10 @@ mod tests {
         mock.expect_find_one()
             .returning(|_, _| Box::pin(async { Err(MongoError::custom("nothing")) }));
 
-        let state = Arc::new(AppState { db: Box::new(mock) });
+        let state = Arc::new(AppState {
+            db: Box::new(mock),
+            views: None,
+        });
 
         let result = check_conflict(state.clone(), "test_db".to_string(), "test_id").await;
 
@@ -62,7 +65,10 @@ mod tests {
         mock.expect_find_one()
             .returning(|_, _| Box::pin(async { Ok(None) }));
 
-        let state = Arc::new(AppState { db: Box::new(mock) });
+        let state = Arc::new(AppState {
+            db: Box::new(mock),
+            views: None,
+        });
 
         let result = check_conflict(state.clone(), "test_db".to_string(), "test_id")
             .await
@@ -79,7 +85,10 @@ mod tests {
         mock.expect_find_one()
             .returning(|_, _| Box::pin(async { Ok(Some(bson::doc! { "_id": "test_id" })) }));
 
-        let state = Arc::new(AppState { db: Box::new(mock) });
+        let state = Arc::new(AppState {
+            db: Box::new(mock),
+            views: None,
+        });
 
         let result = check_conflict(state.clone(), "test_db".to_string(), "test_id")
             .await

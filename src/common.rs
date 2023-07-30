@@ -6,6 +6,7 @@ use axum::response::Response;
 /// Common middleware for all requests.
 
 /// not_implemented_handler is a placeholder for unimplemented routes.
+#[allow(dead_code)]
 pub async fn not_implemented_handler<B>(_: Request<B>) -> Response {
     let mut r: Response = Response::default();
     *r.status_mut() = StatusCode::NOT_IMPLEMENTED;

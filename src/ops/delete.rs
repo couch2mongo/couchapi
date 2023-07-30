@@ -62,7 +62,10 @@ mod tests {
         mock.expect_delete_one()
             .returning(|_, _, _| Box::pin(async { Ok(u64::try_from(1).unwrap()) }));
 
-        let app_state = Arc::new(AppState { db: Box::new(mock) });
+        let app_state = Arc::new(AppState {
+            db: Box::new(mock),
+            views: None,
+        });
 
         let db_name = "test_db".to_string();
         let item_id = "test_item".to_string();
@@ -92,7 +95,10 @@ mod tests {
     async fn test_delete_item_no_rev() {
         let mock = MockDatabase::new();
 
-        let app_state = Arc::new(AppState { db: Box::new(mock) });
+        let app_state = Arc::new(AppState {
+            db: Box::new(mock),
+            views: None,
+        });
 
         let db_name = "test_db".to_string();
         let item_id = "test_item".to_string();
@@ -128,7 +134,10 @@ mod tests {
         mock.expect_find_one()
             .returning(|_, _| Box::pin(async { Err(mongodb::error::Error::custom("nothing")) }));
 
-        let app_state = Arc::new(AppState { db: Box::new(mock) });
+        let app_state = Arc::new(AppState {
+            db: Box::new(mock),
+            views: None,
+        });
 
         let db_name = "test_db".to_string();
         let item_id = "test_item".to_string();
@@ -159,7 +168,10 @@ mod tests {
             Box::pin(async { Ok(Some(doc! { "_id": "test_item", "_rev": "test_rev" })) })
         });
 
-        let app_state = Arc::new(AppState { db: Box::new(mock) });
+        let app_state = Arc::new(AppState {
+            db: Box::new(mock),
+            views: None,
+        });
 
         let db_name = "test_db".to_string();
         let item_id = "test_item".to_string();

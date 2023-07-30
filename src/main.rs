@@ -9,15 +9,14 @@ use crate::common::{
     add_if_none_match,
     add_server_header,
     always_add_must_revalidate,
-    not_implemented_handler,
 };
 use crate::config::Settings;
 use crate::db::MongoDB;
 use crate::ops::create_update::{new_item, new_item_with_id};
 use crate::ops::delete::delete_item;
-use crate::ops::get::get_item;
+use crate::ops::get::{all_docs, get_item, get_view, post_all_docs, post_get_view};
 use crate::state::AppState;
-use axum::extract::{Json, Path};
+use axum::extract::{Json, Path, State};
 use axum::routing::{get, post};
 use axum::{middleware, Router};
 use clap::{command, Parser};
@@ -47,8 +46,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let unwrapped_settings = settings.unwrap();
+    // TODO(lee) make this not mutable... it's just easier while it's late at night
+    let mut unwrapped_settings = settings.unwrap();
     unwrapped_settings.configure_logging();
+    unwrapped_settings.maybe_add_views_from_files();
 
     let db = unwrapped_settings
         .get_mongodb_database()
@@ -56,10 +57,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .expect("unable to connect to mongodb");
     let state = Arc::new(AppState {
         db: Box::new(MongoDB { db }),
+        views: unwrapped_settings.views,
     });
 
     let app = Router::new()
-        .route("/:db/_:view", get(not_implemented_handler))
+        .route("/:db/_design/:design/_view/:view", post(post_get_view).get(get_view))
+        .route("/:db/_all_docs", post(post_all_docs).get(all_docs))
 
         // Get a document
         .route("/:db/:item", get(get_item)
@@ -95,7 +98,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn server_info() -> Json<Value> {
+async fn server_info(State(state): State<Arc<AppState>>) -> Json<Value> {
+    let version_info = match state.db.get_version().await {
+        Ok(v) => json!(v),
+        Err(_) => {
+            json!({
+                "error": "unable to get version info"
+            })
+        }
+    };
+
     // Return a fake amount of data so that libraries like pycouchdb can work
     Json(json!({
         "couchdb": "FakeCouchDB",
@@ -111,7 +123,8 @@ async fn server_info() -> Json<Value> {
         ],
         "vendor": {
             "name": "Green Man Gaming"
-        }
+        },
+        "mongo_details": version_info,
     }))
 }
 
