@@ -56,6 +56,7 @@ pub struct Settings {
 
     pub views: Option<HashMap<String, DesignMapping>>,
     pub view_folder: Option<String>,
+    pub updates_folder: Option<String>,
 
     #[serde(default = "default_log_format")]
     pub log_format: LogFormat,

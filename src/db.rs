@@ -4,8 +4,6 @@ use futures_util::StreamExt;
 use mongodb::error::Error;
 use mongodb::options::{DeleteOptions, ReplaceOptions};
 use mongodb::results::UpdateResult;
-use std::future::Future;
-use std::pin::Pin;
 
 #[cfg(test)]
 use mockall::*;
@@ -79,15 +77,11 @@ impl Database for MongoDB {
     }
 
     #[tracing::instrument]
-    fn aggregate<'life0, 'async_trait>(
-        &'life0 self,
+    async fn aggregate(
+        &self,
         coll: String,
         pipeline: Vec<Document>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<Document>, Error>> + Send + 'async_trait>>
-    where
-        'life0: 'async_trait,
-        Self: 'async_trait,
-    {
+    ) -> Result<Vec<Document>, Error> {
         debug!(
             "aggregate: coll: {}, pipeline: {:?}",
             coll,
@@ -95,14 +89,13 @@ impl Database for MongoDB {
         );
 
         let c = self.db.collection::<Document>(&coll);
-        Box::pin(async move {
-            let mut cursor = c.aggregate(pipeline, None).await?;
-            let mut results = Vec::new();
-            while let Some(doc) = cursor.next().await {
-                results.push(doc?);
-            }
-            Ok(results)
-        })
+        let mut cursor = c.aggregate(pipeline, None).await?;
+        let mut results = Vec::new();
+
+        while let Some(doc) = cursor.next().await {
+            results.push(doc?);
+        }
+        Ok(results)
     }
 
     #[tracing::instrument]

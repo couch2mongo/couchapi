@@ -15,9 +15,10 @@ use crate::db::MongoDB;
 use crate::ops::create_update::{new_item, new_item_with_id};
 use crate::ops::delete::delete_item;
 use crate::ops::get::{all_docs, get_item, get_view, post_all_docs, post_get_view};
+use crate::ops::update::{execute_update_script, execute_update_script_with_doc};
 use crate::state::AppState;
 use axum::extract::{Json, Path, State};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{middleware, Router};
 use clap::{command, Parser};
 use serde_json::{json, Value};
@@ -58,10 +59,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let state = Arc::new(AppState {
         db: Box::new(MongoDB { db }),
         views: unwrapped_settings.views,
+        updates_folder: unwrapped_settings.updates_folder,
     });
 
     let app = Router::new()
         .route("/:db/_design/:design/_view/:view", post(post_get_view).get(get_view))
+        .route("/:db/_design/:design/_update/:function", put(execute_update_script))
+        .route("/:db/_design/:design/_update/:function/:document_id", put(execute_update_script_with_doc))
         .route("/:db/_all_docs", post(post_all_docs).get(all_docs))
 
         // Get a document

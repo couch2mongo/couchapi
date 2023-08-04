@@ -1,5 +1,5 @@
 use crate::common::IfMatch;
-use crate::ops::check_conflict;
+use crate::ops::{check_conflict, JsonWithStatusCodeResponse};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -17,7 +17,7 @@ pub async fn new_item(
     Query(params): Query<HashMap<String, String>>,
     Path(db): Path<String>,
     Json(payload): Json<Value>,
-) -> Result<Response, (StatusCode, Json<Value>)> {
+) -> Result<Response, JsonWithStatusCodeResponse> {
     inner_new_item(db, None, state, params, payload, if_match).await
 }
 
@@ -27,18 +27,18 @@ pub async fn new_item_with_id(
     Query(params): Query<HashMap<String, String>>,
     Path((db, item)): Path<(String, String)>,
     Json(payload): Json<Value>,
-) -> Result<Response, (StatusCode, Json<Value>)> {
+) -> Result<Response, JsonWithStatusCodeResponse> {
     inner_new_item(db, Some(item), state, params, payload, if_match).await
 }
 
-async fn inner_new_item(
+pub async fn inner_new_item(
     db: String,
     item: Option<String>,
     state: Arc<AppState>,
     _params: HashMap<String, String>,
     payload: Value,
     rev_if_match: Option<String>,
-) -> Result<Response, (StatusCode, Json<Value>)> {
+) -> Result<Response, JsonWithStatusCodeResponse> {
     // Generate an id if one wasn't provided through either the URL or the payload
     let id = match item {
         Some(i) => i,

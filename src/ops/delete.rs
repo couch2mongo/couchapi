@@ -1,12 +1,12 @@
 use crate::common::IfMatch;
-use crate::ops::check_conflict;
+use crate::ops::{check_conflict, JsonWithStatusCodeResponse};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use mongodb::options::DeleteOptions;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ pub async fn delete_item(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
     Path((db, item)): Path<(String, String)>,
-) -> Result<Response, (StatusCode, Json<Value>)> {
+) -> Result<Response, JsonWithStatusCodeResponse> {
     let existing_rev = match params.get("rev") {
         Some(rev) => Some(rev.to_string()),
         None => if_match,
@@ -54,6 +54,7 @@ mod tests {
     use bson::doc;
     use hyper::body::to_bytes;
     use reqwest::StatusCode;
+    use serde_json::Value;
 
     #[tokio::test]
     async fn test_delete_item() {
@@ -65,6 +66,7 @@ mod tests {
         let app_state = Arc::new(AppState {
             db: Box::new(mock),
             views: None,
+            updates_folder: None,
         });
 
         let db_name = "test_db".to_string();
@@ -98,6 +100,7 @@ mod tests {
         let app_state = Arc::new(AppState {
             db: Box::new(mock),
             views: None,
+            updates_folder: None,
         });
 
         let db_name = "test_db".to_string();
@@ -137,6 +140,7 @@ mod tests {
         let app_state = Arc::new(AppState {
             db: Box::new(mock),
             views: None,
+            updates_folder: None,
         });
 
         let db_name = "test_db".to_string();
@@ -171,6 +175,7 @@ mod tests {
         let app_state = Arc::new(AppState {
             db: Box::new(mock),
             views: None,
+            updates_folder: None,
         });
 
         let db_name = "test_db".to_string();

@@ -1,11 +1,13 @@
 use crate::common::IfNoneMatch;
 use crate::config::DesignView;
+use crate::ops::{get_item_from_db, JsonWithStatusCodeResponse};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use bson::{doc, Document};
+use indexmap::IndexMap;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,21 +34,8 @@ pub async fn get_item(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
     Path((db, item)): Path<(String, String)>,
-) -> Result<Response, (StatusCode, Json<Value>)> {
-    let document = match state.db.find_one(db, item).await {
-        Ok(d) => match d {
-            Some(d) => d,
-            None => {
-                return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
-            }
-        },
-        Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
-            ));
-        }
-    };
+) -> Result<Response, JsonWithStatusCodeResponse> {
+    let document = get_item_from_db(state, db, item).await?;
 
     // Emulate https://datatracker.ietf.org/doc/html/rfc7232#section-3.2
     if if_none_match.is_some() {
@@ -60,10 +49,10 @@ pub async fn get_item(
     }
 
     // Forces retrieving latest "leaf" revision, no matter what rev was requested. Default is false
-    let latest = match params.get("latest") {
-        Some(b) => matches!(b.as_str(), "true"),
-        None => false,
-    };
+    let latest = params
+        .get("latest")
+        .map(|b| b.as_str() == "true")
+        .unwrap_or(false);
 
     // Forces the use of the rev parameter to match the document revision but only if latest is
     // false
@@ -105,7 +94,7 @@ async fn inner_get_view(
     db: String,
     state: &AppState,
     params: HashMap<String, String>,
-) -> Result<Response, (StatusCode, Json<Value>)> {
+) -> Result<Response, JsonWithStatusCodeResponse> {
     let start_key = get_param(&params, "startkey", "start_key");
     let end_key = get_param(&params, "endkey", "end_key");
 
@@ -281,7 +270,7 @@ fn create_filter(
                 .map(|key| vec![key.as_str().unwrap().to_string()])
                 .collect();
 
-            let map: HashMap<String, Vec<String>> =
+            let map: IndexMap<String, Vec<String>> =
                 v.match_fields.clone().into_iter().zip(transposed).collect();
 
             let bson_map: Vec<Document> = map
@@ -452,6 +441,7 @@ mod tests {
         let app_state = Arc::new(AppState {
             db: Box::new(mock),
             views: None,
+            updates_folder: None,
         });
 
         // Assume the test data exists in MongoDB
@@ -495,6 +485,7 @@ mod tests {
         let app_state = Arc::new(AppState {
             db: Box::new(mock),
             views: None,
+            updates_folder: None,
         });
 
         let db_name = "test_db".to_string();
@@ -539,6 +530,7 @@ mod tests {
         let app_state = Arc::new(AppState {
             db: Box::new(mock),
             views: None,
+            updates_folder: None,
         });
 
         let db_name = "test_db".to_string();
@@ -581,6 +573,7 @@ mod tests {
         let app_state = Arc::new(AppState {
             db: Box::new(mock),
             views: None,
+            updates_folder: None,
         });
 
         let db_name = "test_db".to_string();
@@ -617,6 +610,7 @@ mod tests {
         let state = Arc::new(AppState {
             db: Box::new(mock),
             views: None,
+            updates_folder: None,
         });
 
         let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
@@ -630,6 +624,7 @@ mod tests {
         let state = Arc::new(AppState {
             db: Box::new(mock),
             views: Some(HashMap::new()),
+            updates_folder: None,
         });
 
         let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
@@ -645,6 +640,7 @@ mod tests {
             views: Some(hashmap! {
                 "db".into() => DesignMapping { view_groups: HashMap::new() }
             }),
+            updates_folder: None,
         });
 
         let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
@@ -662,6 +658,7 @@ mod tests {
                     "design".into() => HashMap::new()
                 } }
             }),
+            updates_folder: None,
         });
 
         let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
@@ -689,6 +686,7 @@ mod tests {
                     }
                 } }
             }),
+            updates_folder: None,
         });
 
         let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
@@ -812,6 +810,10 @@ mod tests {
 
     #[test]
     fn test_create_filter_with_keys() {
+        // NOTE: For some reason create_filter() can return the order of the $and
+        // differently. Not sure if this is a BSON issue of not. It ultimately does not matter
+        // though. The test should probably reflect this.
+
         let design_view = DesignView {
             match_fields: vec!["field1".to_string(), "field2".to_string()],
             aggregation: vec![],
