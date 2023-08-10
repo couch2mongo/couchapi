@@ -1,3 +1,4 @@
+use crate::couchdb::maybe_write;
 use crate::ops::create_update::inner_new_item;
 use crate::ops::{get_item_from_db, JsonWithStatusCodeResponse};
 use crate::state::AppState;
@@ -10,6 +11,7 @@ use boa_engine::property::Attribute;
 use boa_engine::{Context, JsValue, Source};
 use bson::Document;
 use maplit::hashmap;
+use reqwest::Method;
 use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -248,6 +250,21 @@ pub async fn execute_update_script(
     Path((db, design, function)): Path<(String, String, String)>,
     Json(payload): Json<Value>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
+    let u = format!("{}/_design/{}/_update/{}", db, design, function);
+
+    let c = maybe_write(
+        &state.couchdb_details,
+        Method::PUT,
+        Some(&payload),
+        &u,
+        &hashmap! {},
+    )
+    .await?;
+
+    if c.is_some() {
+        return Ok(c.unwrap());
+    }
+
     inner_execute_update_script(db, design, function, None, state, payload).await
 }
 
@@ -256,6 +273,21 @@ pub async fn execute_update_script_with_doc(
     Path((db, design, func, document_id)): Path<(String, String, String, String)>,
     Json(payload): Json<Value>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
+    let u = format!("{}/_design/{}/_update/{}/{}", db, design, func, document_id);
+
+    let c = maybe_write(
+        &state.couchdb_details,
+        Method::PUT,
+        Some(&payload),
+        &u,
+        &hashmap! {},
+    )
+    .await?;
+
+    if c.is_some() {
+        return Ok(c.unwrap());
+    }
+
     inner_execute_update_script(db, design, func, Some(document_id), state, payload).await
 }
 

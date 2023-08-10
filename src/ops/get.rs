@@ -1,23 +1,31 @@
 use crate::common::IfNoneMatch;
 use crate::config::DesignView;
+use crate::couchdb::read_through;
 use crate::ops::{get_item_from_db, JsonWithStatusCodeResponse};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use bson::{doc, Document};
+use bson::{doc, Bson, Document};
 use indexmap::IndexMap;
+use maplit::hashmap;
+use reqwest::Method;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Create a DesignView that will return all documents in the database
+/// This is used for the _all_docs endpoint and should not used as a
+/// general purpose way of reading a database. However, we need
+/// to support it for some services.
 pub fn create_all_docs_design_view() -> DesignView {
     DesignView {
         filter_insert_index: 0,
         match_fields: vec!["_id".to_string()],
         key_fields: vec!["key".to_string()],
         value_fields: vec!["rev".to_string()],
+        sort_fields: None,
         aggregation: vec![r#"{
                 "$project": {
                     "_id": 1,
@@ -105,6 +113,13 @@ async fn inner_get_view(
         .unwrap_or("false".to_string())
         == "true";
 
+    let descending = params
+        .get("descending")
+        .cloned()
+        .or_else(|| params.get("descending").cloned())
+        .unwrap_or("false".to_string())
+        == "true";
+
     // Optionally see if we have a Limit or Skip parameter.
     let limit = params
         .get("limit")
@@ -121,7 +136,7 @@ async fn inner_get_view(
 
     let start_key = extract_key_json(start_key);
     let end_key = extract_key_json(end_key);
-    let filter = create_filter(v, &keys, start_key, end_key);
+    let filter = create_filter(v, &keys, start_key, end_key, descending);
 
     let mut original_pipeline: Vec<Document> = v
         .aggregation
@@ -142,6 +157,22 @@ async fn inner_get_view(
             }
             _ => {
                 original_pipeline.insert(0, doc! { "$match": filter });
+            }
+        }
+    }
+
+    if descending {
+        for doc in &mut original_pipeline {
+            if let Some(sort) = doc.get_mut("$sort").and_then(Bson::as_document_mut) {
+                let fields = v.sort_fields.as_ref().unwrap_or(v.match_fields.as_ref());
+                for field in fields {
+                    if let Some(field) = sort.get_mut(field) {
+                        if let Some(v) = field.as_i64() {
+                            *field = Bson::Int64(-v);
+                        }
+                    }
+                }
+                sort.extend(doc! { "_id": -1 });
             }
         }
     }
@@ -241,6 +272,7 @@ fn create_filter(
     keys: &Vec<Value>,
     start_key: Vec<Value>,
     end_key: Vec<Value>,
+    flipped: bool,
 ) -> Document {
     let mut filter = doc! {};
 
@@ -248,8 +280,10 @@ fn create_filter(
         0 => {
             for (i, v) in v.match_fields.iter().enumerate() {
                 if let (Some(start), Some(end)) = (start_key.get(i), end_key.get(i)) {
-                    let start = start.as_str();
-                    let end = end.as_str();
+                    let (start, end) = match flipped {
+                        true => (end.as_str(), start.as_str()),
+                        false => (start.as_str(), end.as_str()),
+                    };
 
                     if start.is_none() || end.is_none() {
                         continue;
@@ -289,26 +323,35 @@ pub async fn get_view(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
     Path((db, design, view)): Path<(String, String, String)>,
-) -> Result<Response, (StatusCode, Json<Value>)> {
-    let actual_view = match extract_view_from_views(&state, db.clone(), design, view) {
-        Ok(value) => value,
-        Err(value) => return value,
-    };
+) -> Result<Response, JsonWithStatusCodeResponse> {
+    let actual_view = extract_view_from_views(&state, db.clone(), design.clone(), view.clone());
+    if actual_view.is_err() {
+        if state.couchdb_details.is_some() {
+            let couchdb_details = state.couchdb_details.as_ref().unwrap();
+            let mapped_db = couchdb_details.map_for_db(db.as_str());
 
-    inner_get_view(actual_view, db, state.as_ref(), params).await
+            let path = format!("{}/_design/{}/_view/{}", mapped_db, design, view);
+            return read_through(couchdb_details, Method::GET, None, &path, &params).await;
+        }
+
+        return Err(actual_view.err().unwrap());
+    }
+
+    inner_get_view(actual_view.unwrap(), db, state.as_ref(), params).await
 }
 
+// TODO(lee): we should use &str for the parameters here but we'll need lifetimes defined
 fn extract_view_from_views(
     state: &Arc<AppState>,
     db: String,
     design: String,
     view: String,
-) -> Result<&DesignView, Result<Response, (StatusCode, Json<Value>)>> {
+) -> Result<&DesignView, (StatusCode, Json<Value>)> {
     if state.views.is_none() {
-        return Err(Err((
+        return Err((
             StatusCode::NOT_IMPLEMENTED,
             Json(json!({"error": "not implemented"})),
-        )));
+        ));
     }
 
     let views = state.views.as_ref().unwrap();
@@ -316,30 +359,21 @@ fn extract_view_from_views(
     let design_mapping = match views.get(db.as_str()) {
         Some(design_mapping) => design_mapping,
         None => {
-            return Err(Err((
-                StatusCode::NOT_FOUND,
-                Json(json!({"error": "not found"})),
-            )));
+            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
         }
     };
 
     let view_group = match design_mapping.view_groups.get(design.as_str()) {
         Some(view) => view,
         None => {
-            return Err(Err((
-                StatusCode::NOT_FOUND,
-                Json(json!({"error": "not found"})),
-            )));
+            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
         }
     };
 
     let actual_view = match view_group.get(view.as_str()) {
         Some(view) => view,
         None => {
-            return Err(Err((
-                StatusCode::NOT_FOUND,
-                Json(json!({"error": "not found"})),
-            )));
+            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
         }
     };
 
@@ -351,14 +385,29 @@ pub async fn post_get_view(
     Path((db, design, view)): Path<(String, String, String)>,
     Json(payload): Json<Value>,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
-    let payload_map = convert_payload(payload);
+    let payload_map = convert_payload(payload.clone());
 
-    let actual_view = match extract_view_from_views(&state, db.clone(), design, view) {
-        Ok(value) => value,
-        Err(value) => return value,
-    };
+    let actual_view = extract_view_from_views(&state, db.clone(), design.clone(), view.clone());
+    if actual_view.is_err() {
+        if state.couchdb_details.is_some() {
+            let couchdb_details = state.couchdb_details.as_ref().unwrap();
+            let mapped_db = couchdb_details.map_for_db(db.as_str());
 
-    inner_get_view(actual_view, db, state.as_ref(), payload_map).await
+            let path = format!("{}/_design/{}/_view/{}", mapped_db, design, view);
+            return read_through(
+                couchdb_details,
+                Method::GET,
+                Some(&payload),
+                &path,
+                &hashmap! {},
+            )
+            .await;
+        }
+
+        return Err(actual_view.err().unwrap());
+    }
+
+    inner_get_view(actual_view.unwrap(), db, state.as_ref(), payload_map).await
 }
 
 /// all_docs is an implementation of the CouchDB _all_docs API. It does this by creating a view
@@ -442,6 +491,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         // Assume the test data exists in MongoDB
@@ -486,6 +536,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let db_name = "test_db".to_string();
@@ -531,6 +582,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let db_name = "test_db".to_string();
@@ -574,6 +626,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let db_name = "test_db".to_string();
@@ -611,6 +664,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
@@ -625,6 +679,7 @@ mod tests {
             db: Box::new(mock),
             views: Some(HashMap::new()),
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
@@ -641,6 +696,7 @@ mod tests {
                 "db".into() => DesignMapping { view_groups: HashMap::new() }
             }),
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
@@ -659,6 +715,7 @@ mod tests {
                 } }
             }),
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
@@ -669,6 +726,7 @@ mod tests {
     fn test_extract_view_from_views_success() {
         let design_view = DesignView {
             match_fields: vec![],
+            sort_fields: None,
             aggregation: vec![],
             key_fields: vec![],
             value_fields: vec![],
@@ -687,6 +745,7 @@ mod tests {
                 } }
             }),
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
@@ -780,6 +839,7 @@ mod tests {
     fn test_create_filter_no_keys() {
         let design_view = DesignView {
             match_fields: vec!["field1".to_string(), "field2".to_string()],
+            sort_fields: None,
             aggregation: vec![],
             key_fields: vec![],
             value_fields: vec![],
@@ -792,7 +852,7 @@ mod tests {
 
         let end_key = vec![json!("end1"), json!("end2")];
 
-        let result = create_filter(&design_view, &keys, start_key, end_key);
+        let result = create_filter(&design_view, &keys, start_key, end_key, false);
 
         let expected = doc! {
             "field1": {
@@ -816,6 +876,7 @@ mod tests {
 
         let design_view = DesignView {
             match_fields: vec!["field1".to_string(), "field2".to_string()],
+            sort_fields: None,
             aggregation: vec![],
             key_fields: vec![],
             value_fields: vec![],
@@ -827,7 +888,7 @@ mod tests {
         let start_key = vec![];
         let end_key = vec![];
 
-        let result = create_filter(&design_view, &keys, start_key, end_key);
+        let result = create_filter(&design_view, &keys, start_key, end_key, false);
 
         let expected = doc! {
             "$and": [

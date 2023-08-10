@@ -67,6 +67,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let db_name = "test_db".to_string();
@@ -101,6 +102,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let db_name = "test_db".to_string();
@@ -141,6 +143,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let db_name = "test_db".to_string();
@@ -176,6 +179,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let db_name = "test_db".to_string();

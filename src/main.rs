@@ -1,5 +1,6 @@
 mod common;
 mod config;
+mod couchdb;
 mod db;
 mod ops;
 mod state;
@@ -25,7 +26,7 @@ use serde_json::{json, Value};
 use std::error::Error;
 use std::sync::Arc;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
-use tracing::Level;
+use tracing::{instrument, warn, Level};
 
 #[derive(Parser, Debug)]
 #[command(author = None, version = None, about = "CouchDB to MongoDB Streamer", long_about = None)]
@@ -34,6 +35,7 @@ struct Args {
     config: String,
 }
 
+#[instrument]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
@@ -52,6 +54,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     unwrapped_settings.configure_logging();
     unwrapped_settings.maybe_add_views_from_files();
 
+    if let Some(couchdb_present) = &unwrapped_settings.couchdb_settings {
+        warn!(
+            read_only = couchdb_present.read_only,
+            read_through = couchdb_present.read_through,
+            "CouchDB settings present, so some functionality will differ"
+        );
+    }
+
     let db = unwrapped_settings
         .get_mongodb_database()
         .await
@@ -60,6 +70,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         db: Box::new(MongoDB { db }),
         views: unwrapped_settings.views,
         updates_folder: unwrapped_settings.updates_folder,
+        couchdb_details: unwrapped_settings.couchdb_settings,
     });
 
     let app = Router::new()

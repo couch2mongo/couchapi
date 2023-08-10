@@ -1,4 +1,5 @@
 use crate::common::IfMatch;
+use crate::couchdb::maybe_write;
 use crate::ops::{check_conflict, JsonWithStatusCodeResponse};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
@@ -6,6 +7,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use mongodb::options::ReplaceOptions;
+use reqwest::Method;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,6 +20,19 @@ pub async fn new_item(
     Path(db): Path<String>,
     Json(payload): Json<Value>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
+    let c = maybe_write(
+        &state.couchdb_details,
+        Method::POST,
+        Some(&payload),
+        &db,
+        &params,
+    )
+    .await?;
+
+    if c.is_some() {
+        return Ok(c.unwrap());
+    }
+
     inner_new_item(db, None, state, params, payload, if_match).await
 }
 
@@ -28,6 +43,21 @@ pub async fn new_item_with_id(
     Path((db, item)): Path<(String, String)>,
     Json(payload): Json<Value>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
+    let path = format!("{}/{}", db, item);
+
+    let c = maybe_write(
+        &state.couchdb_details,
+        Method::PUT,
+        Some(&payload),
+        &path,
+        &params,
+    )
+    .await?;
+
+    if c.is_some() {
+        return Ok(c.unwrap());
+    }
+
     inner_new_item(db, Some(item), state, params, payload, if_match).await
 }
 

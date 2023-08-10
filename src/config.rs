@@ -33,6 +33,7 @@ pub enum LogLevel {
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct DesignView {
     pub match_fields: Vec<String>,
+    pub sort_fields: Option<Vec<String>>,
     pub aggregation: Vec<String>,
     pub key_fields: Vec<String>,
     pub value_fields: Vec<String>,
@@ -43,6 +44,31 @@ pub struct DesignView {
 pub struct DesignMapping {
     // Keyed by ViewGroup then by View
     pub view_groups: HashMap<String, HashMap<String, DesignView>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CouchDb {
+    /// url defines the URL of the CouchDB server.
+    pub url: String,
+
+    /// username defines the username to use when connecting to the CouchDB server.
+    pub username: Option<String>,
+
+    /// password defines the password to use when connecting to the CouchDB server.
+    pub password: Option<String>,
+
+    /// When set to try, we will attempt to read a view from CouchDB if the view is not found in
+    /// the configuration file. This is useful for migrating from CouchDB to MongoDB.
+    #[serde(default)]
+    pub read_through: bool,
+
+    /// When set to true, we will not write to MongoDB but instead only to CouchDB
+    #[serde(default)]
+    pub read_only: bool,
+
+    /// mappings defines which CouchDB database to use on read and write. The key is the MongoDB
+    /// Collection name and the value is the CouchDB database name.
+    pub mappings: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,6 +84,8 @@ pub struct Settings {
     pub view_folder: Option<String>,
     pub updates_folder: Option<String>,
 
+    pub couchdb_settings: Option<CouchDb>,
+
     #[serde(default = "default_log_format")]
     pub log_format: LogFormat,
 
@@ -66,6 +94,12 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// This method creates a new `Settings` struct by reading configuration data from the
+    /// environment and/or a configuration file. If a configuration file is provided, it is read
+    /// and added as a source of configuration data. The method then attempts to deserialize the
+    /// configuration data into a `Settings` struct. If successful, the `Settings` struct is
+    /// returned. If an error occurs during the deserialization process, a `ConfigError` is
+    /// returned.
     pub fn new(config_file: Option<String>) -> Result<Self, ConfigError> {
         let mut config_builder =
             Config::builder().add_source(Environment::with_prefix("couch_stream"));
@@ -80,19 +114,25 @@ impl Settings {
         config_builder.build()?.try_deserialize()
     }
 
+    /// This method checks if views are already configured and if a view folder is configured. If
+    /// views are already configured or a view folder is not configured, it returns. Otherwise, it
+    /// reads all the files in the view folder with the extension ".toml" and parses them into
+    /// `DesignView` structs. It then inserts these views into a `HashMap` of `DesignMapping`
+    /// structs, which is then inserted into the `views` field of the `Settings` struct.
     pub fn maybe_add_views_from_files(&mut self) {
+        // Check if views are already configured
         if self.views.is_some() {
             info!("views already configured");
-
             return;
         }
 
+        // Check if a view folder is configured
         if self.view_folder.is_none() {
             error!("no view folder configured");
-
             return;
         }
 
+        // Iterate over all files in the view folder with the extension ".toml"
         let walker = WalkDir::new("./views").into_iter();
         let mut view_groups: HashMap<String, DesignMapping> = HashMap::new();
 
@@ -118,6 +158,7 @@ impl Settings {
                 continue;
             }
 
+            // Extract the view group name, database name, and view name from the file path
             let view_group_name = path
                 .parent()
                 .and_then(|p| p.file_name())
@@ -135,6 +176,7 @@ impl Settings {
 
             let view_name = file_name_str.replace(".toml", "");
 
+            // Read the contents of the file and parse it into a `DesignView` struct
             let contents = match fs::read_to_string(path) {
                 Ok(c) => c,
                 Err(_) => {
@@ -151,6 +193,7 @@ impl Settings {
                 }
             };
 
+            // Insert the view into the `view_groups` HashMap
             info!(
                 db_name = db_name.as_str(),
                 view_group_name = view_group_name.as_str(),
@@ -170,9 +213,12 @@ impl Settings {
             );
         }
 
+        // Insert the `view_groups` HashMap into the `views` field of the `Settings` struct
         self.views = Some(view_groups);
     }
 
+    /// Configures the logging system based on the values of the `debug`, `log_level`, and
+    /// `log_format` fields of the `CouchDb` struct.
     pub fn configure_logging(&self) {
         let mut x = tracing_subscriber::fmt();
 
@@ -197,16 +243,98 @@ impl Settings {
         };
     }
 
+    /// Asynchronously returns a `mongodb::Client` instance for the MongoDB database specified in
+    /// the `mongodb_connect_string` field of the `CouchDb` struct.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a `mongodb::Client` instance if the operation is successful,
+    /// or a `Box<dyn Error>` if an error occurs.
     pub async fn get_mongodb_client(&self) -> Result<mongodb::Client, Box<dyn Error>> {
         let client = mongodb::Client::with_uri_str(self.mongodb_connect_string.as_str()).await?;
 
         Ok(client)
     }
 
+    /// Asynchronously returns a `mongodb::Database` instance for the MongoDB database specified in
+    /// the `mongodb_database` field of the `CouchDb` struct.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a `mongodb::Database` instance if the operation is successful,
+    /// or a `Box<dyn Error>` if an error occurs.
     pub async fn get_mongodb_database(&self) -> Result<mongodb::Database, Box<dyn Error>> {
         let client = self.get_mongodb_client().await?;
         let db = client.database(self.mongodb_database.as_str());
 
         Ok(db)
+    }
+}
+
+impl CouchDb {
+    /// Returns the mapped value for the given database name, if it exists in the `mappings`
+    /// HashMap. If the database name is not found in the `mappings` HashMap, the original
+    /// database name is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `db` - A string slice that holds the name of the database to be mapped.
+    pub fn map_for_db(&self, db: &str) -> String {
+        self.mappings
+            .as_ref()
+            .and_then(|m| m.get(db))
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| db.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CouchDb;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_no_mappings() {
+        let couch = CouchDb {
+            url: "".to_string(),
+            username: None,
+            password: None,
+            read_through: false,
+            read_only: false,
+            mappings: None,
+        };
+        assert_eq!(couch.map_for_db("test_db"), "test_db".to_string());
+    }
+
+    #[test]
+    fn test_with_mappings_no_match() {
+        let mut map = HashMap::new();
+        map.insert("other_db".to_string(), "mapped_value".to_string());
+
+        let couch = CouchDb {
+            url: "".to_string(),
+            username: None,
+            password: None,
+            read_through: false,
+            read_only: false,
+            mappings: Some(map),
+        };
+        assert_eq!(couch.map_for_db("test_db"), "test_db".to_string());
+    }
+
+    #[test]
+    fn test_with_mappings_with_match() {
+        let mut map = HashMap::new();
+        map.insert("test_db".to_string(), "mapped_value".to_string());
+
+        let couch = CouchDb {
+            url: "".to_string(),
+            username: None,
+            password: None,
+            read_through: false,
+            read_only: false,
+            mappings: Some(map),
+        };
+        assert_eq!(couch.map_for_db("test_db"), "mapped_value".to_string());
     }
 }

@@ -85,6 +85,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let result = get_item_from_db(state.clone(), "test_db".to_string(), "test_id".to_string())
@@ -105,6 +106,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let result = get_item_from_db(state.clone(), "test_db".to_string(), "test_id".to_string())
@@ -126,6 +128,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let result = get_item_from_db(state.clone(), "test_db".to_string(), "test_id".to_string())
@@ -147,6 +150,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let result = check_conflict(state.clone(), "test_db".to_string(), "test_id").await;
@@ -165,6 +169,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let result = check_conflict(state.clone(), "test_db".to_string(), "test_id")
@@ -186,6 +191,7 @@ mod tests {
             db: Box::new(mock),
             views: None,
             updates_folder: None,
+            couchdb_details: None,
         });
 
         let result = check_conflict(state.clone(), "test_db".to_string(), "test_id")
