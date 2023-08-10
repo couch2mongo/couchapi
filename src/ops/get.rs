@@ -228,6 +228,16 @@ async fn inner_get_view(
                 json!(k)
             };
 
+            // If v is only one item then we can just return the value, otherwise we need to
+            // return the actual HashMap.
+            let v = if v.keys().len() == 1 {
+                // We want the only item in the list so we Collect the values into a Vec, and
+                // grab the first item. This is safe because we know there is only one item.
+                json!(v.values().collect::<Vec<_>>().get(0).unwrap())
+            } else {
+                json!(v)
+            };
+
             json!({
                 "id": doc.get_str("_id").unwrap(),
                 "key": k,
