@@ -12,16 +12,22 @@ use crate::common::{
     always_add_must_revalidate,
 };
 use crate::config::Settings;
+use crate::couchdb::read_through;
 use crate::db::MongoDB;
 use crate::ops::create_update::{new_item, new_item_with_id};
 use crate::ops::delete::delete_item;
 use crate::ops::get::{all_docs, get_item, get_view, post_all_docs, post_get_view};
 use crate::ops::update::{execute_update_script, execute_update_script_with_doc};
+use crate::ops::JsonWithStatusCodeResponse;
 use crate::state::AppState;
 use axum::extract::{Json, Path, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{middleware, Router};
 use clap::{command, Parser};
+use hyper::Method;
+use maplit::hashmap;
 use serde_json::{json, Value};
 use std::error::Error;
 use std::sync::Arc;
@@ -113,18 +119,49 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn server_info(State(state): State<Arc<AppState>>) -> Json<Value> {
-    let version_info = match state.db.get_version().await {
-        Ok(v) => json!(v),
-        Err(_) => {
-            json!({
-                "error": "unable to get version info"
-            })
+async fn server_info(
+    State(state): State<Arc<AppState>>,
+) -> Result<Response, JsonWithStatusCodeResponse> {
+    // Start the first async task
+    let version_info_task = state.db.get_version();
+
+    // Start the second async task
+    let couchdb_details_task = async {
+        match &state.couchdb_details {
+            Some(couchdb_details) => {
+                let response =
+                    read_through(couchdb_details, Method::GET, None, "/", &hashmap! {}).await;
+                match response {
+                    Ok(v) => {
+                        let body_bytes = hyper::body::to_bytes(v.into_body()).await.unwrap();
+                        let body = String::from_utf8(body_bytes.to_vec()).unwrap();
+                        Ok(serde_json::from_str(&body).unwrap())
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            None => Ok(json!({})),
         }
     };
 
+    // Await both tasks to finish in parallel
+    let (version_result, couchdb_result) = tokio::join!(version_info_task, couchdb_details_task);
+
+    // Handle the results for the first task
+    let version_info = version_result
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            )
+        })
+        .map(|v| json!(v))?;
+
+    // Extract the result for the second task
+    let couchdb_details = couchdb_result?;
+
     // Return a fake amount of data so that libraries like pycouchdb can work
-    Json(json!({
+    Ok(Json(json!({
         "couchdb": "FakeCouchDB",
         "version": "3.1.1",
         "git_sha": "ce596c0ea",
@@ -140,7 +177,9 @@ async fn server_info(State(state): State<Arc<AppState>>) -> Json<Value> {
             "name": "Green Man Gaming"
         },
         "mongo_details": version_info,
+        "upstream_couchdb": couchdb_details,
     }))
+    .into_response())
 }
 
 async fn db_info(Path(db): Path<String>) -> Json<Value> {

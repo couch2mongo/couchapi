@@ -105,6 +105,10 @@ async fn inner_couch(
         r.headers_mut().insert(k.clone(), v.clone());
     });
 
+    // Add our own special header so we know we did a read-through in the response
+    r.headers_mut()
+        .insert("X-Fake-CouchDb-Read-Through", "true".parse().unwrap());
+
     Ok(r)
 }
 
