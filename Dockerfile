@@ -14,6 +14,7 @@ FROM public.ecr.aws/docker/library/debian:bullseye-slim AS runtime
 WORKDIR /usr/src/app
 
 COPY --from=builder /usr/src/app/target/release/couchapi .
+COPY views views
 
 RUN apt-get update && apt-get install -y ca-certificates
 
