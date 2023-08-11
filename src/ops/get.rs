@@ -295,14 +295,14 @@ fn create_filter(
                         false => (start.as_str(), end.as_str()),
                     };
 
-                    if start.is_none() || end.is_none() {
-                        continue;
-                    }
-
-                    let field = doc! {
-                        "$gte": start.unwrap(),
-                        "$lte": end.unwrap(),
-                    };
+                    let field = start
+                        .map(|start_val| doc! {"$gte": start_val})
+                        .into_iter()
+                        .chain(end.map(|end_val| doc! {"$lte": end_val}))
+                        .fold(doc! {}, |mut acc, val| {
+                            acc.extend(val);
+                            acc
+                        });
 
                     filter.insert(v, field);
                 }
@@ -905,6 +905,38 @@ mod tests {
                 { "field1": { "$in": ["key1"] } },
                 { "field2": { "$in": ["key2"] } },
             ]
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_create_filter_partial_key() {
+        let design_view = DesignView {
+            match_fields: vec!["field1".to_string(), "field2".to_string()],
+            sort_fields: None,
+            aggregation: vec![],
+            key_fields: vec![],
+            value_fields: vec![],
+            filter_insert_index: 0,
+        };
+
+        let keys = vec![];
+
+        let start_key = vec![json!("start1"), json!("start2")];
+
+        let end_key = vec![json!("end1"), json!(null)];
+
+        let result = create_filter(&design_view, &keys, start_key, end_key, false);
+
+        let expected = doc! {
+            "field1": {
+                "$gte": "start1",
+                "$lte": "end1",
+            },
+            "field2": {
+                "$gte": "start2",
+            },
         };
 
         assert_eq!(result, expected);
