@@ -106,6 +106,9 @@ async fn inner_get_view(
     let start_key = get_param(&params, "startkey", "start_key");
     let end_key = get_param(&params, "endkey", "end_key");
 
+    let startkey_docid = get_param(&params, "startkey_docid", "start_key_doc_id");
+    let endkey_docid = get_param(&params, "endkey_docid", "end_key_doc_id");
+
     let include_docs = params
         .get("include_docs")
         .cloned()
@@ -136,7 +139,15 @@ async fn inner_get_view(
 
     let start_key = extract_key_json(start_key);
     let end_key = extract_key_json(end_key);
-    let filter = create_filter(v, &keys, start_key, end_key, descending);
+    let filter = create_filter(
+        v,
+        &keys,
+        start_key,
+        end_key,
+        startkey_docid,
+        endkey_docid,
+        descending,
+    );
 
     let mut original_pipeline: Vec<Document> = v
         .aggregation
@@ -282,6 +293,8 @@ fn create_filter(
     keys: &Vec<Value>,
     start_key: Vec<Value>,
     end_key: Vec<Value>,
+    start_key_doc_id: Option<String>,
+    end_key_doc_id: Option<String>,
     flipped: bool,
 ) -> Document {
     let mut filter = doc! {};
@@ -304,7 +317,31 @@ fn create_filter(
                             acc
                         });
 
-                    filter.insert(v, field);
+                    if field.keys().count() > 0 {
+                        filter.insert(v, field);
+                    }
+                }
+            }
+
+            if let Some(start_key_doc_id) = start_key_doc_id {
+                if !start_key_doc_id.is_empty() {
+                    filter.insert(
+                        "_id",
+                        doc! {
+                            "$gte": start_key_doc_id
+                        },
+                    );
+                }
+            }
+
+            if let Some(end_key_doc_id) = end_key_doc_id {
+                if !end_key_doc_id.is_empty() {
+                    filter.insert(
+                        "_id",
+                        doc! {
+                            "$lte": end_key_doc_id
+                        },
+                    );
                 }
             }
         }
@@ -874,7 +911,7 @@ mod tests {
 
         let end_key = vec![json!("end1"), json!("end2")];
 
-        let result = create_filter(&design_view, &keys, start_key, end_key, false);
+        let result = create_filter(&design_view, &keys, start_key, end_key, None, None, false);
 
         let expected = doc! {
             "field1": {
@@ -910,7 +947,7 @@ mod tests {
         let start_key = vec![];
         let end_key = vec![];
 
-        let result = create_filter(&design_view, &keys, start_key, end_key, false);
+        let result = create_filter(&design_view, &keys, start_key, end_key, None, None, false);
 
         let expected = doc! {
             "$and": [
@@ -939,7 +976,7 @@ mod tests {
 
         let end_key = vec![json!("end1"), json!(null)];
 
-        let result = create_filter(&design_view, &keys, start_key, end_key, false);
+        let result = create_filter(&design_view, &keys, start_key, end_key, None, None, false);
 
         let expected = doc! {
             "field1": {
