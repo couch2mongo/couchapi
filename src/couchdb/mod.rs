@@ -115,6 +115,7 @@ async fn inner_couch(
 #[instrument]
 pub async fn maybe_write(
     couchdb_details: &Option<CouchDb>,
+    mongodb_db: &str,
     method: http::method::Method,
     json_payload: Option<&Value>,
     path: &str,
@@ -127,7 +128,7 @@ pub async fn maybe_write(
 
     let couchdb_details = couchdb_details.as_ref().unwrap();
 
-    if !couchdb_details.read_only {
+    if !couchdb_details.is_read_only(mongodb_db) {
         return Ok(None);
     }
 
@@ -185,6 +186,4 @@ mod tests {
 
         mock.assert_async().await;
     }
-
-    // More tests for other scenarios can follow.
 }

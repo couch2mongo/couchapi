@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1.27.0", features = ["full"] }
+tokio = { version = "1.32.0", features = ["full"] }
 futures-util = "0.3.28"
 async-trait = "0.1.72"
 axum = { version = "0.6.20", features = ["macros", "headers"] }
@@ -17,18 +17,18 @@ walkdir = "2.3.3"
 toml = "0.7.4"
 boa_engine = "0.17.0"
 base64 = "0.21.2"
-indexmap = "1.9.3"
+indexmap = "2.0.0"
 url = "2.4.0"
 headers = "0.3.8"
 
 # MongoDB
 bson = "2.6.1"
-mongodb = { version = "2.6.0", features = ["aws-auth"] }
+mongodb = { version = "2.6.1", features = ["aws-auth"] }
 
 # Generic JSON stuff
-serde = "1.0.183"
-serde_json = "1.0.104"
-serde_derive = "1.0.183"
+serde = "1.0.185"
+serde_json = "1.0.105"
+serde_derive = "1.0.185"
 uuid = "1.4.1"
 md5 = "0.7.0"
 maplit = "1.0.2"
@@ -39,7 +39,7 @@ tracing-subscriber = { version = "0.3.16", features = ["env-filter", "json"] }
 
 # Configuration
 config = "0.13.3"
-clap = { version = "4.3.21", features = ["derive"] }
+clap = { version = "4.3.23", features = ["derive"] }
 
 [dev-dependencies]
 mockall = "0.11.4"

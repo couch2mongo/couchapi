@@ -66,6 +66,13 @@ pub struct CouchDb {
     #[serde(default)]
     pub read_only: bool,
 
+    /// A list of databases that we will read views from CouchDB instead of MongoDB
+    /// if the view doesn't exist.
+    pub read_through_databases: Option<Vec<String>>,
+
+    /// A list of databases that we will only read from MongoDB and write to CouchDB
+    pub read_only_databases: Option<Vec<String>>,
+
     /// mappings defines which CouchDB database to use on read and write. The key is the MongoDB
     /// Collection name and the value is the CouchDB database name.
     pub mappings: Option<HashMap<String, String>>,
@@ -286,6 +293,28 @@ impl CouchDb {
             .map(|s| s.to_string())
             .unwrap_or_else(|| db.to_string())
     }
+
+    /// Returns `true` either if read_through is `true` or if the given database name is found
+    /// in the `read_only_databases` vector. Otherwise, returns `false`.
+    pub fn should_read_through(&self, db: &str) -> bool {
+        self.read_through
+            || self
+                .read_through_databases
+                .as_ref()
+                .unwrap_or(&vec![])
+                .contains(&db.to_string())
+    }
+
+    /// Returns `true` either if read_only is `true` or if the given database name is found
+    /// in the `read_only_databases` vector. Otherwise, returns `false`.
+    pub fn is_read_only(&self, db: &str) -> bool {
+        self.read_only
+            || self
+                .read_only_databases
+                .as_ref()
+                .unwrap_or(&vec![])
+                .contains(&db.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -302,6 +331,8 @@ mod tests {
             read_through: false,
             read_only: false,
             mappings: None,
+            read_through_databases: None,
+            read_only_databases: None,
         };
         assert_eq!(couch.map_for_db("test_db"), "test_db".to_string());
     }
@@ -318,6 +349,8 @@ mod tests {
             read_through: false,
             read_only: false,
             mappings: Some(map),
+            read_through_databases: None,
+            read_only_databases: None,
         };
         assert_eq!(couch.map_for_db("test_db"), "test_db".to_string());
     }
@@ -334,7 +367,79 @@ mod tests {
             read_through: false,
             read_only: false,
             mappings: Some(map),
+            read_through_databases: None,
+            read_only_databases: None,
         };
         assert_eq!(couch.map_for_db("test_db"), "mapped_value".to_string());
+    }
+
+    #[test]
+    fn test_should_read_through() {
+        let db = CouchDb {
+            url: "https://example.com".to_string(),
+            username: None,
+            password: None,
+            read_through: false,
+            read_only: false,
+            read_through_databases: None,
+            read_only_databases: None,
+            mappings: None,
+        };
+
+        // 1. Default behavior
+        assert!(!db.should_read_through("test_db"));
+
+        // 2. Set read_through to true
+        let db = CouchDb {
+            read_through: true,
+            ..db
+        };
+        assert!(db.should_read_through("test_db"));
+
+        // 3. Database in read_through_databases
+        let db = CouchDb {
+            read_through: false,
+            read_through_databases: Some(vec!["test_db".to_string()]),
+            ..db
+        };
+        assert!(db.should_read_through("test_db"));
+
+        // 4. Database NOT in read_through_databases
+        assert!(!db.should_read_through("other_db"));
+    }
+
+    #[test]
+    fn test_is_read_only() {
+        let db = CouchDb {
+            url: "https://example.com".to_string(),
+            username: None,
+            password: None,
+            read_through: false,
+            read_only: false,
+            read_through_databases: None,
+            read_only_databases: None,
+            mappings: None,
+        };
+
+        // 1. Default behavior
+        assert!(!db.is_read_only("test_db"));
+
+        // 2. Set read_only to true
+        let db = CouchDb {
+            read_only: true,
+            ..db
+        };
+        assert!(db.is_read_only("test_db"));
+
+        // 3. Database in read_only_databases
+        let db = CouchDb {
+            read_only: false,
+            read_only_databases: Some(vec!["test_db".to_string()]),
+            ..db
+        };
+        assert!(db.is_read_only("test_db"));
+
+        // 4. Database NOT in read_only_databases
+        assert!(!db.is_read_only("other_db"));
     }
 }

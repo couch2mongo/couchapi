@@ -22,6 +22,7 @@ pub async fn new_item(
 ) -> Result<Response, JsonWithStatusCodeResponse> {
     let c = maybe_write(
         &state.couchdb_details,
+        &db,
         Method::POST,
         Some(&payload),
         &db,
@@ -47,6 +48,7 @@ pub async fn new_item_with_id(
 
     let c = maybe_write(
         &state.couchdb_details,
+        &db,
         Method::PUT,
         Some(&payload),
         &path,

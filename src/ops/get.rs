@@ -336,7 +336,13 @@ pub async fn get_view(
 ) -> Result<Response, JsonWithStatusCodeResponse> {
     let actual_view = extract_view_from_views(&state, db.clone(), design.clone(), view.clone());
     if actual_view.is_err() {
-        if state.couchdb_details.is_some() {
+        if state.couchdb_details.is_some()
+            && state
+                .couchdb_details
+                .as_ref()
+                .unwrap()
+                .should_read_through(&db)
+        {
             let couchdb_details = state.couchdb_details.as_ref().unwrap();
             let mapped_db = couchdb_details.map_for_db(db.as_str());
 
@@ -399,7 +405,13 @@ pub async fn post_get_view(
 
     let actual_view = extract_view_from_views(&state, db.clone(), design.clone(), view.clone());
     if actual_view.is_err() {
-        if state.couchdb_details.is_some() {
+        if state.couchdb_details.is_some()
+            && state
+                .couchdb_details
+                .as_ref()
+                .unwrap()
+                .should_read_through(&db)
+        {
             let couchdb_details = state.couchdb_details.as_ref().unwrap();
             let mapped_db = couchdb_details.map_for_db(db.as_str());
 

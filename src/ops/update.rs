@@ -254,6 +254,7 @@ pub async fn execute_update_script(
 
     let c = maybe_write(
         &state.couchdb_details,
+        &db,
         Method::PUT,
         Some(&payload),
         &u,
@@ -277,6 +278,7 @@ pub async fn execute_update_script_with_doc(
 
     let c = maybe_write(
         &state.couchdb_details,
+        &db,
         Method::PUT,
         Some(&payload),
         &u,
