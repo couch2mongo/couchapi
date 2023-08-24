@@ -149,14 +149,7 @@ async fn inner_get_view(
         descending,
     );
 
-    let mut original_pipeline: Vec<Document> = v
-        .aggregation
-        .iter()
-        .filter_map(|x| {
-            let j: Result<Value, _> = serde_json::from_str(x.as_str());
-            j.ok().and_then(|v| bson::to_document(&v).ok())
-        })
-        .collect();
+    let mut original_pipeline = extract_pipeline_bson(v)?;
 
     if !filter.is_empty() {
         match original_pipeline.get_mut(v.filter_insert_index) {
@@ -286,6 +279,30 @@ async fn inner_get_view(
 
     let json_document = Json(return_value).into_response();
     Ok(json_document)
+}
+
+fn extract_pipeline_bson(v: &DesignView) -> Result<Vec<Document>, JsonWithStatusCodeResponse> {
+    v.clone()
+        .aggregation
+        .iter()
+        .map(|item| {
+            serde_json::from_str(item.as_str())
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"error": e.to_string()})),
+                    )
+                })
+                .and_then(|j: Value| {
+                    bson::to_document(&j).map_err(|e| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({"error": e.to_string()})),
+                        )
+                    })
+                })
+        })
+        .collect()
 }
 
 fn create_filter(
@@ -989,5 +1006,36 @@ mod tests {
         };
 
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_invalid_json_in_aggregation() {
+        let design_view = DesignView {
+            match_fields: vec!["field1".to_string(), "field2".to_string()],
+            sort_fields: None,
+            aggregation: vec!["{".to_string()],
+            key_fields: vec![],
+            value_fields: vec![],
+            filter_insert_index: 0,
+        };
+
+        let v = extract_pipeline_bson(&design_view);
+        assert!(v.is_err());
+    }
+
+    #[test]
+    fn test_valid_json_in_aggregation() {
+        let design_view = DesignView {
+            match_fields: vec!["field1".to_string(), "field2".to_string()],
+            sort_fields: None,
+            aggregation: vec!["{}".to_string()],
+            key_fields: vec![],
+            value_fields: vec![],
+            filter_insert_index: 0,
+        };
+
+        let v = extract_pipeline_bson(&design_view);
+        assert!(!v.is_err());
+        assert_eq!(v.unwrap().len(), 1);
     }
 }

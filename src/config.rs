@@ -40,7 +40,7 @@ pub struct DesignView {
     pub filter_insert_index: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct DesignMapping {
     // Keyed by ViewGroup then by View
     pub view_groups: HashMap<String, HashMap<String, DesignView>>,
@@ -208,16 +208,16 @@ impl Settings {
                 "adding view"
             );
 
-            view_groups.insert(
-                db_name,
-                DesignMapping {
-                    view_groups: hashmap! {
-                        view_group_name => hashmap! {
-                            view_name => design_view
-                        }
-                    },
-                },
-            );
+            // Create an empty view group IF we need one
+            let design_mapping = view_groups.entry(db_name.clone()).or_insert(DesignMapping {
+                view_groups: hashmap! {},
+            });
+
+            let db_mapping = design_mapping
+                .view_groups
+                .entry(view_group_name.clone())
+                .or_insert(hashmap! {});
+            db_mapping.insert(view_name.clone(), design_view);
         }
 
         // Insert the `view_groups` HashMap into the `views` field of the `Settings` struct
