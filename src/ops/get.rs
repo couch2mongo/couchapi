@@ -154,10 +154,37 @@ async fn inner_get_view(
     if !filter.is_empty() {
         match original_pipeline.get_mut(v.filter_insert_index) {
             Some(doc) if doc.get("$match").is_some() => {
-                doc.get_mut("$match")
-                    .and_then(|v| v.as_document_mut())
-                    .unwrap()
-                    .extend(filter.into_iter());
+                let match_entry = doc.get_mut("$match").and_then(Bson::as_document_mut);
+
+                if match_entry.is_none() {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"error": "expected $match to be a Document"})),
+                    ));
+                }
+
+                let unwrapped_match_entry = match_entry.unwrap();
+
+                for (k, v) in filter.iter() {
+                    let entry = unwrapped_match_entry
+                        .entry(k.clone())
+                        .or_insert_with(|| Bson::Document(doc! {}));
+                    if let Some(entry_doc) = entry.as_document_mut() {
+                        if let Some(v_doc) = v.as_document() {
+                            entry_doc.extend(v_doc.clone().into_iter());
+                        } else {
+                            return Err((
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(json!({"error": "expected value in filter to be a Document"})),
+                            ));
+                        }
+                    } else {
+                        return Err((
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({"error": "expected entry in filter to be a Document"})),
+                        ));
+                    }
+                }
             }
             _ => {
                 original_pipeline.insert(0, doc! { "$match": filter });
@@ -324,6 +351,11 @@ fn create_filter(
                         true => (end.as_str(), start.as_str()),
                         false => (start.as_str(), end.as_str()),
                     };
+
+                    if start == end {
+                        filter.insert(v, start);
+                        continue;
+                    }
 
                     let field = start
                         .map(|start_val| doc! {"$gte": start_val})
@@ -1035,7 +1067,7 @@ mod tests {
         };
 
         let v = extract_pipeline_bson(&design_view);
-        assert!(!v.is_err());
+        assert!(v.is_ok());
         assert_eq!(v.unwrap().len(), 1);
     }
 }
