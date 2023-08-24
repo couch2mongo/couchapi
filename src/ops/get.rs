@@ -352,8 +352,8 @@ fn create_filter(
                         false => (start.as_str(), end.as_str()),
                     };
 
-                    if start == end {
-                        filter.insert(v, start);
+                    if start == end && start.is_some() {
+                        filter.insert(v, doc! {"$eq": start});
                         continue;
                     }
 
