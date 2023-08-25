@@ -111,7 +111,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Add state
         .with_state(state);
 
-    axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
+    axum::Server::bind(&unwrapped_settings.listen_address.parse().unwrap())
         .serve(app.into_make_service())
         .await
         .unwrap();

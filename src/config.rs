@@ -16,6 +16,10 @@ fn default_log_format() -> LogFormat {
     LogFormat::Compact
 }
 
+fn default_listen_address() -> String {
+    "0.0.0.0:3000".to_string()
+}
+
 #[derive(Debug, Deserialize)]
 pub enum LogFormat {
     Compact,
@@ -83,6 +87,9 @@ pub struct CouchDb {
 pub struct Settings {
     #[serde(default)]
     pub debug: bool,
+
+    #[serde(default = "default_listen_address")]
+    pub listen_address: String,
 
     pub mongodb_connect_string: String,
     pub mongodb_database: String,
