@@ -25,7 +25,7 @@ pub async fn new_item(
         &db,
         Method::POST,
         Some(&payload),
-        &db,
+        "",
         &params,
     )
     .await?;
@@ -44,14 +44,12 @@ pub async fn new_item_with_id(
     Path((db, item)): Path<(String, String)>,
     Json(payload): Json<Value>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
-    let path = format!("{}/{}", db, item);
-
     let c = maybe_write(
         &state.couchdb_details,
         &db,
         Method::PUT,
         Some(&payload),
-        &path,
+        &item,
         &params,
     )
     .await?;

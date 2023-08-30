@@ -250,7 +250,7 @@ pub async fn execute_update_script(
     Path((db, design, function)): Path<(String, String, String)>,
     Json(payload): Json<Value>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
-    let u = format!("{}/_design/{}/_update/{}", db, design, function);
+    let u = format!("_design/{}/_update/{}", design, function);
 
     let c = maybe_write(
         &state.couchdb_details,
@@ -274,7 +274,7 @@ pub async fn execute_update_script_with_doc(
     Path((db, design, func, document_id)): Path<(String, String, String, String)>,
     Json(payload): Json<Value>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
-    let u = format!("{}/_design/{}/_update/{}/{}", db, design, func, document_id);
+    let u = format!("_design/{}/_update/{}/{}", design, func, document_id);
 
     let c = maybe_write(
         &state.couchdb_details,

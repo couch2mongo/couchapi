@@ -132,9 +132,12 @@ pub async fn maybe_write(
         return Ok(None);
     }
 
+    let mapped_db_name = couchdb_details.map_for_db(mongodb_db);
+    let full_path = format!("{}/{}", mapped_db_name, path);
+
     // Create the URL from the couch config and the path
     let mut url = Url::parse(&couchdb_details.url).unwrap();
-    url.set_path(path);
+    url.set_path(full_path.as_str());
 
     inner_couch(
         method,
