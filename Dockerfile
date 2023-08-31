@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/rust:1.71.1-bullseye AS builder
+FROM public.ecr.aws/docker/library/rust:1.72.0-bullseye AS builder
 
 WORKDIR /usr/src/app
 

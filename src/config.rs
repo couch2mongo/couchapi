@@ -147,7 +147,7 @@ impl Settings {
         }
 
         // Iterate over all files in the view folder with the extension ".toml"
-        let walker = WalkDir::new("./views").into_iter();
+        let walker = WalkDir::new(self.view_folder.as_ref().unwrap()).into_iter();
         let mut view_groups: HashMap<String, DesignMapping> = HashMap::new();
 
         for entry in walker {
