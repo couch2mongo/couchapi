@@ -2,6 +2,7 @@ use axum::http;
 use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
+use tracing::warn;
 
 /// Common middleware for all requests.
 
@@ -69,6 +70,29 @@ pub async fn add_if_match<B>(mut req: Request<B>, next: Next<B>) -> Result<Respo
         .and_then(|h| h.to_str().ok());
 
     extensions_mut.insert(IfMatch(if_match.map(|s| s.to_string())));
+
+    Ok(next.run(req).await)
+}
+
+pub async fn add_content_type_if_needed<B>(
+    mut req: Request<B>,
+    next: Next<B>,
+) -> Result<Response, StatusCode> {
+    let headers = req.headers_mut();
+    let empty_existing = http::HeaderValue::from_static("");
+
+    if !headers.contains_key(http::header::CONTENT_TYPE)
+        || headers[http::header::CONTENT_TYPE] != "application/json"
+    {
+        let existing = headers
+            .get(http::header::CONTENT_TYPE)
+            .unwrap_or(&empty_existing);
+        warn!(existing = existing.to_str().unwrap(), "Adding content type");
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            "application/json".parse().unwrap(),
+        );
+    }
 
     Ok(next.run(req).await)
 }

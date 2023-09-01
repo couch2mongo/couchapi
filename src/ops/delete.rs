@@ -1,4 +1,5 @@
 use crate::common::IfMatch;
+use crate::couchdb::maybe_write;
 use crate::ops::{check_conflict, JsonWithStatusCodeResponse};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
@@ -6,6 +7,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use mongodb::options::DeleteOptions;
+use reqwest::Method;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,6 +18,20 @@ pub async fn delete_item(
     Query(params): Query<HashMap<String, String>>,
     Path((db, item)): Path<(String, String)>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
+    let c = maybe_write(
+        &state.couchdb_details,
+        &db,
+        Method::DELETE,
+        None,
+        &item,
+        &params,
+    )
+    .await?;
+
+    if c.is_some() {
+        return Ok(c.unwrap());
+    }
+
     let existing_rev = match params.get("rev") {
         Some(rev) => Some(rev.to_string()),
         None => if_match,

@@ -6,6 +6,7 @@ mod ops;
 mod state;
 
 use crate::common::{
+    add_content_type_if_needed,
     add_if_match,
     add_if_none_match,
     add_server_header,
@@ -66,6 +67,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
             read_through = couchdb_present.read_through,
             "CouchDB settings present, so some functionality will differ"
         );
+
+        if let Some(ro_databases) = &couchdb_present.read_only_databases {
+            warn!(
+                databases = ro_databases.join(", "),
+                "Read-only databases configured"
+            );
+        }
+
+        if let Some(rt_databases) = &couchdb_present.read_through_databases {
+            warn!(
+                databases = rt_databases.join(", "),
+                "Read-through databases configured"
+            );
+        }
+
+        if let Some(mappings) = &couchdb_present.mappings {
+            for (k, v) in mappings {
+                warn!(couchdb = k, mongodb = v, "Mapping");
+            }
+        }
     }
 
     let db = unwrapped_settings
@@ -103,6 +124,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .level(Level::INFO))
             .on_response(DefaultOnResponse::new()
                 .level(Level::INFO)))
+
+        .layer(middleware::from_fn(add_content_type_if_needed))
 
         // Add standard headers.
         .layer(middleware::from_fn(always_add_must_revalidate))
