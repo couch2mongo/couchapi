@@ -25,6 +25,7 @@ use axum::extract::{Json, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
+use axum::ServiceExt;
 use axum::{middleware, Router};
 use clap::{command, Parser};
 use hyper::Method;
@@ -32,7 +33,9 @@ use maplit::hashmap;
 use serde_json::{json, Value};
 use std::error::Error;
 use std::sync::Arc;
+use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
+use tower_layer::Layer;
 use tracing::{instrument, warn, Level};
 
 #[derive(Parser, Debug)]
@@ -100,7 +103,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         couchdb_details: unwrapped_settings.couchdb_settings,
     });
 
-    let app = Router::new()
+    let app = NormalizePathLayer::trim_trailing_slash().layer(Router::new()
         .route("/:db/_design/:design/_view/:view", post(post_get_view).get(get_view))
         .route("/:db/_design/:design/_update/:function", put(execute_update_script))
         .route("/:db/_design/:design/_update/:function/:document_id", put(execute_update_script_with_doc))
@@ -132,7 +135,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .layer(middleware::from_fn(add_server_header))
 
         // Add state
-        .with_state(state);
+        .with_state(state));
 
     axum::Server::bind(&unwrapped_settings.listen_address.parse().unwrap())
         .serve(app.into_make_service())

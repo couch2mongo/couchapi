@@ -11,7 +11,8 @@ futures-util = "0.3.28"
 async-trait = "0.1.72"
 axum = { version = "0.6.20", features = ["macros", "headers"] }
 hyper = "0.14.27"
-tower-http = { version = "0.4.3", features = ["trace"] }
+tower-http = { version = "0.4.3", features = ["trace", "normalize-path"] }
+tower-layer = "0.3.2"
 reqwest = { version = "0.11.20", features = ["json"] }
 walkdir = "2.3.3"
 toml = "0.7.4"
