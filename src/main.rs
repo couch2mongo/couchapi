@@ -11,6 +11,7 @@ use crate::common::{
     add_if_none_match,
     add_server_header,
     always_add_must_revalidate,
+    log_response_if_error,
 };
 use crate::config::Settings;
 use crate::couchdb::read_through;
@@ -133,6 +134,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Add standard headers.
         .layer(middleware::from_fn(always_add_must_revalidate))
         .layer(middleware::from_fn(add_server_header))
+
+        .layer(middleware::from_fn(log_response_if_error))
 
         // Add state
         .with_state(state));

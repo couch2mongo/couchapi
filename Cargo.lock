@@ -762,6 +762,7 @@ dependencies = [
  "base64 0.21.2",
  "boa_engine",
  "bson",
+ "bytes",
  "clap",
  "config",
  "futures-util",

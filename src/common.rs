@@ -1,7 +1,9 @@
+use axum::body::Body;
 use axum::http;
 use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
+use bytes::Bytes;
 use tracing::warn;
 
 /// Common middleware for all requests.
@@ -30,6 +32,46 @@ pub async fn add_server_header<B>(req: Request<B>, next: Next<B>) -> Response {
         "Server",
         "CouchDB to MongoDB Emulator Proxy".parse().unwrap(),
     );
+    res
+}
+
+async fn buffer_and_log<B>(body: B) -> Result<Bytes, (StatusCode, String)>
+where
+    B: axum::body::HttpBody<Data = Bytes>,
+    B::Error: std::fmt::Display,
+{
+    let bytes = match hyper::body::to_bytes(body).await {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("failed to read body: {}", err),
+            ));
+        }
+    };
+
+    if let Ok(body) = std::str::from_utf8(&bytes) {
+        if !body.is_empty() {
+            warn!(body = body, "response log");
+        }
+    }
+
+    Ok(bytes)
+}
+
+pub async fn log_response_if_error<B>(req: Request<B>, next: Next<B>) -> Response {
+    let res = next.run(req).await;
+
+    if res.status().is_server_error() {
+        let (res_parts, res_body) = res.into_parts();
+
+        // Print response
+        let bytes = buffer_and_log(res_body).await;
+        let res = Response::from_parts(res_parts, Body::from(bytes.unwrap()));
+
+        return res.into_response();
+    }
+
     res
 }
 
