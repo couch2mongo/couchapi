@@ -101,6 +101,6 @@ impl Database for MongoDB {
     #[tracing::instrument]
     async fn count(&self, coll: String) -> Result<u64, Error> {
         let c = self.db.collection::<Document>(&coll);
-        c.count_documents(doc! {}, None).await
+        c.estimated_document_count(None).await
     }
 }
