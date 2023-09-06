@@ -35,6 +35,11 @@ pub enum LogLevel {
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
+pub struct ReduceView {
+    pub aggregation: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct DesignView {
     pub match_fields: Vec<String>,
     pub sort_fields: Option<Vec<String>>,
@@ -42,6 +47,7 @@ pub struct DesignView {
     pub key_fields: Vec<String>,
     pub value_fields: Vec<String>,
     pub filter_insert_index: usize,
+    pub reduce: Option<HashMap<String, ReduceView>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
