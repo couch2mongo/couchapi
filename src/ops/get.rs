@@ -14,6 +14,7 @@ use reqwest::Method;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::info;
 
 /// Create a DesignView that will return all documents in the database
 /// This is used for the _all_docs endpoint and should not used as a
@@ -35,6 +36,7 @@ pub fn create_all_docs_design_view() -> DesignView {
                 }
             }"#
         .to_string()],
+        single_item_key_is_list: false,
     }
 }
 
@@ -193,6 +195,13 @@ async fn inner_get_view(
                 let unwrapped_match_entry = match_entry.unwrap();
 
                 for (k, v) in filter.iter() {
+                    if k == "$and" {
+                        let new_doc = doc! { "$and": v };
+
+                        unwrapped_match_entry.extend(new_doc.into_iter());
+                        continue;
+                    }
+
                     let entry = unwrapped_match_entry
                         .entry(k.clone())
                         .or_insert_with(|| Bson::Document(doc! {}));
@@ -251,6 +260,9 @@ async fn inner_get_view(
         ));
     }
 
+    let pipeline_json = serde_json::to_string(&pipeline.clone()).unwrap();
+    info!("pipeline '{}'", pipeline_json);
+
     let results_run = state.db.aggregate(db.clone(), pipeline).await;
     if results_run.is_err() {
         return Err((
@@ -272,7 +284,7 @@ async fn inner_get_view(
                 .map(|x| doc.get(x).unwrap_or(&Bson::Null))
                 .collect::<Vec<_>>();
 
-            let v = v
+            let value = v
                 .value_fields
                 .iter()
                 .map(|x| (x, doc.get(x)))
@@ -280,7 +292,7 @@ async fn inner_get_view(
 
             // If k is only one item then we can just return the value, otherwise we need to
             // return an array of the values
-            let k = if k.len() == 1 {
+            let k = if k.len() == 1 && !v.single_item_key_is_list {
                 json!(k[0].clone())
             } else {
                 json!(k)
@@ -288,12 +300,12 @@ async fn inner_get_view(
 
             // If v is only one item then we can just return the value, otherwise we need to
             // return the actual HashMap.
-            let v = if v.keys().len() == 1 {
+            let v = if value.keys().len() == 1 {
                 // We want the only item in the list so we Collect the values into a Vec, and
                 // grab the first item. This is safe because we know there is only one item.
-                json!(v.values().collect::<Vec<_>>().get(0).unwrap())
+                json!(value.values().collect::<Vec<_>>().get(0).unwrap())
             } else {
-                json!(v)
+                json!(value)
             };
 
             json!({
@@ -395,41 +407,42 @@ fn create_filter(
     end_key_doc_id: Option<String>,
     flipped: bool,
 ) -> Document {
-    let mut filter = doc! {};
+    let mut filter: Document = doc! {};
 
     match keys.len() {
         0 => {
             for (i, v) in v.match_fields.iter().enumerate() {
-                if let (Some(start), Some(end)) = (start_key.get(i), end_key.get(i)) {
-                    let (start, end) = match flipped {
-                        true => (bson::to_bson(end).ok(), bson::to_bson(start).ok()),
-                        false => (bson::to_bson(start).ok(), bson::to_bson(end).ok()),
-                    };
+                let start = start_key.get(i).unwrap_or_else(|| &json!(null));
+                let end = end_key.get(i).unwrap_or_else(|| &json!(null));
 
-                    if start == end && start.is_some() {
-                        filter.insert(v.clone(), doc! {"$eq": start.unwrap()});
-                        continue;
-                    }
+                let (start, end) = match flipped {
+                    true => (bson::to_bson(end).ok(), bson::to_bson(start).ok()),
+                    false => (bson::to_bson(start).ok(), bson::to_bson(end).ok()),
+                };
 
-                    let field = start
-                        .filter(|val| *val != Bson::Null && *val != Bson::Document(Document::new()))
-                        .map(|start_val| doc! {"$gte": start_val})
-                        .into_iter()
-                        .chain(
-                            // Only add the $lte condition if end is not null or an empty Document
-                            end.filter(|val| {
-                                *val != Bson::Null && *val != Bson::Document(Document::new())
-                            })
-                            .map(|end_val| doc! {"$lte": end_val}),
-                        )
-                        .fold(doc! {}, |mut acc, val| {
-                            acc.extend(val);
-                            acc
-                        });
+                if start == end && start.is_some() {
+                    filter.insert(v.clone(), doc! {"$eq": start.unwrap()});
+                    continue;
+                }
 
-                    if !field.is_empty() {
-                        filter.insert(v.clone(), field);
-                    }
+                let field = start
+                    .filter(|val| *val != Bson::Null && *val != Bson::Document(Document::new()))
+                    .map(|start_val| doc! {"$gte": start_val})
+                    .into_iter()
+                    .chain(
+                        // Only add the $lte condition if end is not null or an empty Document
+                        end.filter(|val| {
+                            *val != Bson::Null && *val != Bson::Document(Document::new())
+                        })
+                        .map(|end_val| doc! {"$lte": end_val}),
+                    )
+                    .fold(doc! {}, |mut acc, val| {
+                        acc.extend(val);
+                        acc
+                    });
+
+                if !field.is_empty() {
+                    filter.insert(v.clone(), field);
                 }
             }
 
@@ -464,6 +477,7 @@ fn create_filter(
 }
 
 fn map_keys(v: &DesignView, keys: &[Value], filter: &mut Document) {
+    // Convert keys to Bson
     let vec_keys = keys
         .iter()
         .map(|key| {
@@ -475,19 +489,19 @@ fn map_keys(v: &DesignView, keys: &[Value], filter: &mut Document) {
         })
         .collect::<Vec<_>>();
 
-    let transposed: Vec<Vec<Bson>> = (0..vec_keys[0].len())
-        .map(|i| vec_keys.iter().map(|key| key[i].clone()).collect())
-        .collect();
-
-    let map: IndexMap<String, Vec<Bson>> =
-        v.match_fields.clone().into_iter().zip(transposed).collect();
-
-    let bson_map: Vec<Document> = map
+    // Generate '$and' conditions for each key
+    let and_conditions: Vec<Document> = vec_keys
         .into_iter()
-        .map(|(key, values)| doc! { key: { "$in": values } })
+        .map(|values| {
+            let map: IndexMap<String, Bson> =
+                v.match_fields.clone().into_iter().zip(values).collect();
+            let doc_and: Document = map.into_iter().collect();
+            doc! { "$and": [doc_and] }
+        })
         .collect();
 
-    filter.insert("$and", bson_map);
+    // Insert into the filter
+    filter.insert("$and", vec![doc! { "$or": and_conditions }]);
 }
 
 pub async fn get_view(
@@ -915,6 +929,7 @@ mod tests {
             value_fields: vec![],
             filter_insert_index: 0,
             reduce: None,
+            single_item_key_is_list: false,
         };
 
         let mock = MockDatabase::new();
@@ -1029,6 +1044,7 @@ mod tests {
             value_fields: vec![],
             filter_insert_index: 0,
             reduce: None,
+            single_item_key_is_list: false,
         };
 
         let keys = vec![];
@@ -1054,6 +1070,34 @@ mod tests {
     }
 
     #[test]
+    fn test_create_filter_with_only_start_key() {
+        let design_view = DesignView {
+            match_fields: vec!["field1".to_string()],
+            sort_fields: None,
+            aggregation: vec![],
+            key_fields: vec![],
+            value_fields: vec![],
+            filter_insert_index: 0,
+            reduce: None,
+            single_item_key_is_list: false,
+        };
+
+        let keys = vec![];
+        let start_key = vec![json!("start1")];
+        let end_key = vec![];
+
+        let result = create_filter(&design_view, &keys, start_key, end_key, None, None, false);
+
+        let expected = doc! {
+            "field1": {
+                "$gte": "start1",
+            }
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
     fn test_create_filter_no_keys_but_numbers() {
         let design_view = DesignView {
             match_fields: vec!["field1".to_string(), "field2".to_string()],
@@ -1063,6 +1107,7 @@ mod tests {
             value_fields: vec![],
             filter_insert_index: 0,
             reduce: None,
+            single_item_key_is_list: false,
         };
 
         let keys = vec![];
@@ -1101,6 +1146,7 @@ mod tests {
             value_fields: vec![],
             filter_insert_index: 0,
             reduce: None,
+            single_item_key_is_list: false,
         };
 
         let keys = vec![json![vec![json!("key1"), json!("key2")]]];
@@ -1112,8 +1158,11 @@ mod tests {
 
         let expected = doc! {
             "$and": [
-                { "field1": { "$in": ["key1"] } },
-                { "field2": { "$in": ["key2"] } },
+                { "$or": [
+                    { "$and": [
+                        {"field1": "key1", "field2": "key2"}
+                    ] }
+                ] }
             ]
         };
 
@@ -1134,6 +1183,7 @@ mod tests {
             value_fields: vec![],
             filter_insert_index: 0,
             reduce: None,
+            single_item_key_is_list: false,
         };
 
         let keys = vec![json!("key1"), json!("key2")];
@@ -1145,7 +1195,24 @@ mod tests {
 
         let expected = doc! {
             "$and": [
-                { "field1": { "$in": ["key1", "key2"] } },
+                {
+                    "$or": [
+                        {
+                            "$and": [
+                                {
+                                    "field1": "key1"
+                                }
+                            ]
+                        },
+                        {
+                            "$and": [
+                                {
+                                    "field1": "key2"
+                                }
+                            ]
+                        }
+                    ]
+                }
             ]
         };
 
@@ -1162,22 +1229,34 @@ mod tests {
             value_fields: vec![],
             filter_insert_index: 0,
             reduce: None,
+            single_item_key_is_list: false,
         };
 
         let keys = vec![json!(1), json!(2)];
 
-        let start_key = vec![];
-        let end_key = vec![];
+        let mut filter: Document = doc! {};
 
-        let result = create_filter(&design_view, &keys, start_key, end_key, None, None, false);
+        map_keys(&design_view, &keys, &mut filter);
 
         let expected = doc! {
-            "$and": [
-                { "field1": { "$in": [Bson::Int64(1), Bson::Int64(2)] } },
-            ]
+            "$and": [ {
+                "$or": [
+                    { "$and": [
+                        {
+                        "field1": Bson::Int64(1)
+                        }
+                    ] },
+                    { "$and": [
+                        {
+                        "field1": Bson::Int64(2)
+                        }
+                    ] }
+                ]
+
+            } ]
         };
 
-        assert_eq!(result, expected);
+        assert_eq!(filter, expected);
     }
 
     #[test]
@@ -1190,6 +1269,7 @@ mod tests {
             value_fields: vec![],
             filter_insert_index: 0,
             reduce: None,
+            single_item_key_is_list: false,
         };
 
         let keys = vec![];
@@ -1223,6 +1303,7 @@ mod tests {
             value_fields: vec![],
             filter_insert_index: 0,
             reduce: None,
+            single_item_key_is_list: false,
         };
 
         let v = extract_pipeline_bson(&design_view, false, 0);
@@ -1239,6 +1320,7 @@ mod tests {
             value_fields: vec![],
             filter_insert_index: 0,
             reduce: None,
+            single_item_key_is_list: false,
         };
 
         let v = extract_pipeline_bson(&design_view, false, 0);
