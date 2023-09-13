@@ -1,16 +1,19 @@
 use crate::common::IfNoneMatch;
 use crate::config::DesignView;
 use crate::couchdb::read_through;
+use crate::ops::get_js::execute_script;
 use crate::ops::{get_item_from_db, JsonWithStatusCodeResponse};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
+use boa_gc::Finalize;
 use bson::{doc, Bson, Document};
 use indexmap::IndexMap;
 use maplit::hashmap;
 use reqwest::Method;
+use serde_derive::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -37,6 +40,7 @@ pub fn create_all_docs_design_view() -> DesignView {
             }"#
         .to_string()],
         single_item_key_is_list: false,
+        break_glass_js_script: None,
     }
 }
 
@@ -100,12 +104,23 @@ fn get_param(params: &HashMap<String, String>, key: &str, fallback_key: &str) ->
         .or_else(|| params.get(fallback_key).cloned())
 }
 
-async fn inner_get_view(
-    v: &DesignView,
-    db: String,
-    state: &AppState,
-    params: HashMap<String, String>,
-) -> Result<Response, JsonWithStatusCodeResponse> {
+#[derive(Debug, Clone, Finalize, Serialize)]
+pub struct ViewOptions {
+    pub reduce: bool,
+    pub group: bool,
+    pub group_level: i64,
+    pub include_docs: bool,
+    pub descending: bool,
+    pub limit: Option<i64>,
+    pub skip: i64,
+    pub start_key: Vec<Value>,
+    pub end_key: Vec<Value>,
+    pub startkey_docid: Option<String>,
+    pub endkey_docid: Option<String>,
+    pub keys: Vec<Value>,
+}
+
+fn extract_view_options_from_params(params: HashMap<String, String>) -> ViewOptions {
     let start_key = get_param(&params, "startkey", "start_key");
     let end_key = get_param(&params, "endkey", "end_key");
 
@@ -168,100 +183,36 @@ async fn inner_get_view(
 
     let start_key = extract_key_json(start_key);
     let end_key = extract_key_json(end_key);
-    let filter = create_filter(
-        v,
-        &keys,
+
+    ViewOptions {
+        reduce,
+        group,
+        group_level,
+        include_docs,
+        descending,
+        limit,
+        skip,
         start_key,
         end_key,
         startkey_docid,
         endkey_docid,
-        descending,
-    );
-
-    let mut original_pipeline = extract_pipeline_bson(v, reduce | group, group_level)?;
-
-    if !filter.is_empty() {
-        match original_pipeline.get_mut(v.filter_insert_index) {
-            Some(doc) if doc.get("$match").is_some() => {
-                let match_entry = doc.get_mut("$match").and_then(Bson::as_document_mut);
-
-                if match_entry.is_none() {
-                    return Err((
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({"error": "expected $match to be a Document"})),
-                    ));
-                }
-
-                let unwrapped_match_entry = match_entry.unwrap();
-
-                for (k, v) in filter.iter() {
-                    if k == "$and" {
-                        let new_doc = doc! { "$and": v };
-
-                        unwrapped_match_entry.extend(new_doc.into_iter());
-                        continue;
-                    }
-
-                    let entry = unwrapped_match_entry
-                        .entry(k.clone())
-                        .or_insert_with(|| Bson::Document(doc! {}));
-                    if let Some(entry_doc) = entry.as_document_mut() {
-                        if let Some(v_doc) = v.as_document() {
-                            entry_doc.extend(v_doc.clone().into_iter());
-                        } else {
-                            return Err((
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                Json(json!({"error": "expected value in filter to be a Document"})),
-                            ));
-                        }
-                    } else {
-                        return Err((
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            Json(json!({"error": "expected entry in filter to be a Document"})),
-                        ));
-                    }
-                }
-            }
-            _ => {
-                original_pipeline.insert(v.filter_insert_index, doc! { "$match": filter });
-            }
-        }
+        keys,
     }
+}
 
-    if descending {
-        for doc in &mut original_pipeline {
-            if let Some(sort) = doc.get_mut("$sort").and_then(Bson::as_document_mut) {
-                let fields = v.sort_fields.as_ref().unwrap_or(v.match_fields.as_ref());
-                for field in fields {
-                    if let Some(field) = sort.get_mut(field) {
-                        if let Some(v) = field.as_i64() {
-                            *field = Bson::Int64(-v);
-                        }
-                    }
-                }
-                sort.extend(doc! { "_id": -1 });
-            }
-        }
-    }
+async fn inner_get_view(
+    v: &DesignView,
+    db: String,
+    state: &AppState,
+    params: HashMap<String, String>,
+) -> Result<Response, JsonWithStatusCodeResponse> {
+    let view_options = extract_view_options_from_params(params);
 
-    let mut pipeline = original_pipeline.clone();
-    pipeline.push(doc! { "$skip": skip });
-
-    // Add the $limit to the skipped_pipeline but only if the limit variable is set
-    if let Some(lim) = limit {
-        pipeline.push(doc! { "$limit": lim });
-    }
-
-    let count = state.db.count(db.clone()).await;
-    if count.is_err() {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": count.err().unwrap().to_string()})),
-        ));
-    }
-
-    let pipeline_json = serde_json::to_string(&pipeline.clone()).unwrap();
-    info!("pipeline '{}'", pipeline_json);
+    let pipeline = if let Some(f) = &v.break_glass_js_script {
+        execute_script(f.as_str(), &view_options)?
+    } else {
+        create_automated_pipeline(v, &view_options).await?
+    };
 
     let results_run = state.db.aggregate(db.clone(), pipeline).await;
     if results_run.is_err() {
@@ -322,7 +273,7 @@ async fn inner_get_view(
     //
     // This could be optimized by using find with many IDs at once but all that does it move the
     // iterator to the server.
-    if include_docs {
+    if view_options.include_docs {
         for item in &mut items {
             let id = item.get("id").unwrap().as_str().unwrap();
             let doc_result = state.db.find_one(db.clone(), id.to_string()).await;
@@ -337,14 +288,120 @@ async fn inner_get_view(
         }
     }
 
+    let count = state.db.count(db.clone()).await;
+    if count.is_err() {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": count.err().unwrap().to_string()})),
+        ));
+    }
+
     let return_value = json!({
         "total_rows": count.unwrap(),
-        "offset": skip,
+        "offset": view_options.skip,
         "rows": items,
     });
 
     let json_document = Json(return_value).into_response();
     Ok(json_document)
+}
+
+async fn create_automated_pipeline(
+    v: &DesignView,
+    view_options: &ViewOptions,
+) -> Result<Vec<Document>, JsonWithStatusCodeResponse> {
+    let filter = create_filter(
+        v,
+        &view_options.keys,
+        &view_options.start_key,
+        &view_options.end_key,
+        &view_options.startkey_docid,
+        &view_options.endkey_docid,
+        view_options.descending,
+    );
+
+    let mut original_pipeline = extract_pipeline_bson(
+        v,
+        view_options.reduce | view_options.group,
+        view_options.group_level,
+    )?;
+
+    if !filter.is_empty() {
+        match original_pipeline.get_mut(v.filter_insert_index) {
+            Some(doc) if doc.get("$match").is_some() => {
+                let match_entry = doc.get_mut("$match").and_then(Bson::as_document_mut);
+
+                if match_entry.is_none() {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"error": "expected $match to be a Document"})),
+                    ));
+                }
+
+                let unwrapped_match_entry = match_entry.unwrap();
+
+                for (k, v) in filter.iter() {
+                    if k == "$and" {
+                        let new_doc = doc! { "$and": v };
+
+                        unwrapped_match_entry.extend(new_doc.into_iter());
+                        continue;
+                    }
+
+                    let entry = unwrapped_match_entry
+                        .entry(k.clone())
+                        .or_insert_with(|| Bson::Document(doc! {}));
+                    if let Some(entry_doc) = entry.as_document_mut() {
+                        if let Some(v_doc) = v.as_document() {
+                            entry_doc.extend(v_doc.clone().into_iter());
+                        } else {
+                            return Err((
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(json!({"error": "expected value in filter to be a Document"})),
+                            ));
+                        }
+                    } else {
+                        return Err((
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({"error": "expected entry in filter to be a Document"})),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                original_pipeline.insert(v.filter_insert_index, doc! { "$match": filter });
+            }
+        }
+    }
+
+    if view_options.descending {
+        for doc in &mut original_pipeline {
+            if let Some(sort) = doc.get_mut("$sort").and_then(Bson::as_document_mut) {
+                let fields = v.sort_fields.as_ref().unwrap_or(v.match_fields.as_ref());
+                for field in fields {
+                    if let Some(field) = sort.get_mut(field) {
+                        if let Some(v) = field.as_i64() {
+                            *field = Bson::Int64(-v);
+                        }
+                    }
+                }
+                sort.extend(doc! { "_id": -1 });
+            }
+        }
+    }
+
+    let mut pipeline = original_pipeline.clone();
+    pipeline.push(doc! { "$skip": view_options.skip });
+
+    // Add the $limit to the skipped_pipeline but only if the limit variable is set
+    if let Some(lim) = view_options.limit {
+        pipeline.push(doc! { "$limit": lim });
+    }
+
+    let pipeline_json = serde_json::to_string(&pipeline.clone()).unwrap();
+    info!("pipeline '{}'", pipeline_json);
+
+    Ok(pipeline)
 }
 
 fn extract_pipeline_bson(
@@ -400,11 +457,11 @@ fn extract_pipeline_bson(
 
 fn create_filter(
     v: &DesignView,
-    keys: &Vec<Value>,
-    start_key: Vec<Value>,
-    end_key: Vec<Value>,
-    start_key_doc_id: Option<String>,
-    end_key_doc_id: Option<String>,
+    keys: &[Value],
+    start_key: &[Value],
+    end_key: &[Value],
+    start_key_doc_id: &Option<String>,
+    end_key_doc_id: &Option<String>,
     flipped: bool,
 ) -> Document {
     let mut filter: Document = doc! {};
@@ -930,6 +987,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            break_glass_js_script: None,
         };
 
         let mock = MockDatabase::new();
@@ -1045,6 +1103,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            break_glass_js_script: None,
         };
 
         let keys = vec![];
@@ -1053,7 +1112,15 @@ mod tests {
 
         let end_key = vec![json!("end1"), json!("end2")];
 
-        let result = create_filter(&design_view, &keys, start_key, end_key, None, None, false);
+        let result = create_filter(
+            &design_view,
+            &keys,
+            &start_key,
+            &end_key,
+            &None,
+            &None,
+            false,
+        );
 
         let expected = doc! {
             "field1": {
@@ -1080,13 +1147,22 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            break_glass_js_script: None,
         };
 
         let keys = vec![];
         let start_key = vec![json!("start1")];
         let end_key = vec![];
 
-        let result = create_filter(&design_view, &keys, start_key, end_key, None, None, false);
+        let result = create_filter(
+            &design_view,
+            &keys,
+            &start_key,
+            &end_key,
+            &None,
+            &None,
+            false,
+        );
 
         let expected = doc! {
             "field1": {
@@ -1108,6 +1184,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            break_glass_js_script: None,
         };
 
         let keys = vec![];
@@ -1116,7 +1193,15 @@ mod tests {
 
         let end_key = vec![json!("end1"), json!(2)];
 
-        let result = create_filter(&design_view, &keys, start_key, end_key, None, None, false);
+        let result = create_filter(
+            &design_view,
+            &keys,
+            &start_key,
+            &end_key,
+            &None,
+            &None,
+            false,
+        );
 
         let expected = doc! {
             "field1": {
@@ -1147,6 +1232,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            break_glass_js_script: None,
         };
 
         let keys = vec![json![vec![json!("key1"), json!("key2")]]];
@@ -1154,7 +1240,15 @@ mod tests {
         let start_key = vec![];
         let end_key = vec![];
 
-        let result = create_filter(&design_view, &keys, start_key, end_key, None, None, false);
+        let result = create_filter(
+            &design_view,
+            &keys,
+            &start_key,
+            &end_key,
+            &None,
+            &None,
+            false,
+        );
 
         let expected = doc! {
             "$and": [
@@ -1184,6 +1278,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            break_glass_js_script: None,
         };
 
         let keys = vec![json!("key1"), json!("key2")];
@@ -1191,7 +1286,15 @@ mod tests {
         let start_key = vec![];
         let end_key = vec![];
 
-        let result = create_filter(&design_view, &keys, start_key, end_key, None, None, false);
+        let result = create_filter(
+            &design_view,
+            &keys,
+            &start_key,
+            &end_key,
+            &None,
+            &None,
+            false,
+        );
 
         let expected = doc! {
             "$and": [
@@ -1230,6 +1333,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            break_glass_js_script: None,
         };
 
         let keys = vec![json!(1), json!(2)];
@@ -1270,6 +1374,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            break_glass_js_script: None,
         };
 
         let keys = vec![];
@@ -1278,7 +1383,15 @@ mod tests {
 
         let end_key = vec![json!("end1"), json!({})];
 
-        let result = create_filter(&design_view, &keys, start_key, end_key, None, None, false);
+        let result = create_filter(
+            &design_view,
+            &keys,
+            &start_key,
+            &end_key,
+            &None,
+            &None,
+            false,
+        );
 
         let expected = doc! {
             "field1": {
@@ -1304,6 +1417,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            break_glass_js_script: None,
         };
 
         let v = extract_pipeline_bson(&design_view, false, 0);
@@ -1321,6 +1435,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            break_glass_js_script: None,
         };
 
         let v = extract_pipeline_bson(&design_view, false, 0);

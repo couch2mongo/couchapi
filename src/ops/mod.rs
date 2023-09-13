@@ -1,6 +1,7 @@
 pub mod create_update;
 pub mod delete;
 pub mod get;
+mod get_js;
 pub mod update;
 
 use crate::state::AppState;

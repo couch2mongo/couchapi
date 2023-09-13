@@ -590,6 +590,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a24f6aa1ecc56e797506437b1f9a172e4a5f207894e74196c682cb656d2c2d60"
 
 [[package]]
+name = "boa_runtime"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12df1771056bac16bb9d45732b645998704ce19da177248e3facd284c4d0c0b2"
+dependencies = [
+ "boa_engine",
+ "boa_gc",
+ "rustc-hash",
+]
+
+[[package]]
 name = "bson"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -760,6 +771,8 @@ dependencies = [
  "axum",
  "base64 0.21.4",
  "boa_engine",
+ "boa_gc",
+ "boa_runtime",
  "bson",
  "bytes",
  "clap",
