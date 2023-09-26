@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/rust:1.72.0-bullseye AS builder
+FROM public.ecr.aws/docker/library/rust:1.72.1-bullseye AS builder
 
 WORKDIR /usr/src/app
 
@@ -15,6 +15,7 @@ WORKDIR /usr/src/app
 
 COPY --from=builder /usr/src/app/target/release/couchapi .
 COPY views views
+COPY updates updates
 
 RUN apt-get update && apt-get install -y ca-certificates
 
