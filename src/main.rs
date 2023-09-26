@@ -18,7 +18,14 @@ use crate::couchdb::read_through;
 use crate::db::MongoDB;
 use crate::ops::create_update::{new_item, new_item_with_id};
 use crate::ops::delete::delete_item;
-use crate::ops::get::{all_docs, get_item, get_view, post_all_docs, post_get_view};
+use crate::ops::get::{
+    all_docs,
+    get_item,
+    get_view,
+    post_all_docs,
+    post_get_view,
+    post_multi_query,
+};
 use crate::ops::update::{execute_update_script, execute_update_script_with_doc};
 use crate::ops::JsonWithStatusCodeResponse;
 use crate::state::AppState;
@@ -106,6 +113,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let app = NormalizePathLayer::trim_trailing_slash().layer(Router::new()
         .route("/:db/_design/:design/_view/:view", post(post_get_view).get(get_view))
+        .route("/:db/_design/:design/_view/:view/queries", post(post_multi_query))
         .route("/:db/_design/:design/_update/:function", put(execute_update_script))
         .route("/:db/_design/:design/_update/:function/:document_id", put(execute_update_script_with_doc))
         .route("/:db/_all_docs", post(post_all_docs).get(all_docs))

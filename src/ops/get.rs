@@ -10,6 +10,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use boa_gc::Finalize;
 use bson::{doc, Bson, Document};
+use hyper::body::to_bytes;
 use indexmap::IndexMap;
 use maplit::hashmap;
 use reqwest::Method;
@@ -288,16 +289,15 @@ async fn inner_get_view(
         }
     }
 
-    let count = state.db.count(db.clone()).await;
-    if count.is_err() {
-        return Err((
+    let count = state.db.count(db.clone()).await.map_err(|e| {
+        (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": count.err().unwrap().to_string()})),
-        ));
-    }
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
 
     let return_value = json!({
-        "total_rows": count.unwrap(),
+        "total_rows": count,
         "offset": view_options.skip,
         "rows": items,
     });
@@ -369,7 +369,8 @@ async fn create_automated_pipeline(
                 }
             }
             _ => {
-                original_pipeline.insert(v.filter_insert_index, doc! { "$match": filter });
+                let insert_index = std::cmp::min(v.filter_insert_index, original_pipeline.len());
+                original_pipeline.insert(insert_index, doc! { "$match": filter });
             }
         }
     }
@@ -650,7 +651,7 @@ pub async fn post_get_view(
             let path = format!("{}/_design/{}/_view/{}", mapped_db, design, view);
             return read_through(
                 couchdb_details,
-                Method::GET,
+                Method::POST,
                 Some(&payload),
                 &path,
                 &hashmap! {},
@@ -662,6 +663,83 @@ pub async fn post_get_view(
     }
 
     inner_get_view(actual_view.unwrap(), db, state.as_ref(), payload_map).await
+}
+
+pub async fn post_multi_query(
+    State(state): State<Arc<AppState>>,
+    Path((db, design, view)): Path<(String, String, String)>,
+    Json(payload): Json<Value>,
+) -> Result<Response, (StatusCode, Json<Value>)> {
+    let actual_view = extract_view_from_views(&state, db.clone(), design.clone(), view.clone());
+
+    if actual_view.is_err() {
+        if state.couchdb_details.is_some()
+            && state
+                .couchdb_details
+                .as_ref()
+                .unwrap()
+                .should_read_through(&db)
+        {
+            let couchdb_details = state.couchdb_details.as_ref().unwrap();
+            let mapped_db = couchdb_details.map_for_db(db.as_str());
+
+            let path = format!("{}/_design/{}/_view/{}/queries", mapped_db, design, view);
+            return read_through(
+                couchdb_details,
+                Method::POST,
+                Some(&payload),
+                &path,
+                &hashmap! {},
+            )
+            .await;
+        }
+
+        return Err(actual_view.err().unwrap());
+    }
+
+    let actual_view = actual_view.unwrap();
+
+    let queries = payload
+        .get("queries")
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "expected payload to contain a queries field"})),
+            )
+        })?
+        .clone();
+
+    match queries {
+        Value::Array(payload) => {
+            let mut results = Vec::new();
+            for p in payload {
+                let payload_map = convert_payload(p);
+                let result =
+                    inner_get_view(actual_view, db.clone(), state.as_ref(), payload_map).await;
+                results.push(result);
+            }
+            let mut json_results = Vec::new();
+            for r in results {
+                match r {
+                    Ok(response) => {
+                        let body = to_bytes(response.into_body()).await.unwrap();
+                        let actual_json_body: Value = serde_json::from_slice(&body).unwrap();
+                        json_results.push(actual_json_body);
+                    }
+                    Err((status_code, _json)) => {
+                        json_results.push(json!({"error": status_code.to_string()}));
+                    }
+                }
+            }
+
+            let results = json!({"results": json_results});
+            Ok(Json(results).into_response())
+        }
+        _ => Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "expected payload to be an array"})),
+        )),
+    }
 }
 
 /// all_docs is an implementation of the CouchDB _all_docs API. It does this by creating a view
