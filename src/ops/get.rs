@@ -41,6 +41,7 @@ pub fn create_all_docs_design_view() -> DesignView {
             }"#
         .to_string()],
         single_item_key_is_list: false,
+        single_item_value_is_dict: true,
         break_glass_js_script: None,
     }
 }
@@ -252,7 +253,7 @@ async fn inner_get_view(
 
             // If v is only one item then we can just return the value, otherwise we need to
             // return the actual HashMap.
-            let v = if value.keys().len() == 1 {
+            let v = if value.keys().len() == 1 && !v.single_item_value_is_dict {
                 // We want the only item in the list so we Collect the values into a Vec, and
                 // grab the first item. This is safe because we know there is only one item.
                 json!(value.values().collect::<Vec<_>>().get(0).unwrap())
@@ -1072,6 +1073,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            single_item_value_is_dict: false,
             break_glass_js_script: None,
         };
 
@@ -1188,6 +1190,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            single_item_value_is_dict: false,
             break_glass_js_script: None,
         };
 
@@ -1232,6 +1235,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            single_item_value_is_dict: false,
             break_glass_js_script: None,
         };
 
@@ -1269,6 +1273,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            single_item_value_is_dict: false,
             break_glass_js_script: None,
         };
 
@@ -1317,6 +1322,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            single_item_value_is_dict: false,
             break_glass_js_script: None,
         };
 
@@ -1363,6 +1369,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            single_item_value_is_dict: false,
             break_glass_js_script: None,
         };
 
@@ -1418,6 +1425,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            single_item_value_is_dict: false,
             break_glass_js_script: None,
         };
 
@@ -1459,6 +1467,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            single_item_value_is_dict: false,
             break_glass_js_script: None,
         };
 
@@ -1502,6 +1511,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            single_item_value_is_dict: false,
             break_glass_js_script: None,
         };
 
@@ -1520,6 +1530,7 @@ mod tests {
             filter_insert_index: 0,
             reduce: None,
             single_item_key_is_list: false,
+            single_item_value_is_dict: false,
             break_glass_js_script: None,
         };
 
