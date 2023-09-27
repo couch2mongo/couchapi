@@ -632,9 +632,11 @@ fn extract_view_from_views(
 pub async fn post_get_view(
     State(state): State<Arc<AppState>>,
     Path((db, design, view)): Path<(String, String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     Json(payload): Json<Value>,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
-    let payload_map = convert_payload(payload.clone());
+    let mut payload_map = convert_payload(payload.clone());
+    payload_map.extend(params);
 
     let actual_view = extract_view_from_views(&state, db.clone(), design.clone(), view.clone());
     if actual_view.is_err() {
@@ -668,6 +670,7 @@ pub async fn post_get_view(
 pub async fn post_multi_query(
     State(state): State<Arc<AppState>>,
     Path((db, design, view)): Path<(String, String, String)>,
+    Query(params): Query<HashMap<String, String>>,
     Json(payload): Json<Value>,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
     let actual_view = extract_view_from_views(&state, db.clone(), design.clone(), view.clone());
@@ -713,7 +716,9 @@ pub async fn post_multi_query(
         Value::Array(payload) => {
             let mut results = Vec::new();
             for p in payload {
-                let payload_map = convert_payload(p);
+                let mut payload_map = convert_payload(p);
+                payload_map.extend(params.clone());
+
                 let result =
                     inner_get_view(actual_view, db.clone(), state.as_ref(), payload_map).await;
                 results.push(result);
@@ -758,9 +763,11 @@ pub async fn all_docs(
 pub async fn post_all_docs(
     State(state): State<Arc<AppState>>,
     Path(db): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     Json(payload): Json<Value>,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
-    let payload_map = convert_payload(payload);
+    let mut payload_map = convert_payload(payload);
+    payload_map.extend(params);
 
     inner_get_view(
         &create_all_docs_design_view(),
