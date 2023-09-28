@@ -114,8 +114,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let app = NormalizePathLayer::trim_trailing_slash().layer(Router::new()
         .route("/:db/_design/:design/_view/:view", post(post_get_view).get(get_view))
         .route("/:db/_design/:design/_view/:view/queries", post(post_multi_query))
-        .route("/:db/_design/:design/_update/:function", put(execute_update_script))
-        .route("/:db/_design/:design/_update/:function/:document_id", put(execute_update_script_with_doc))
+        .route("/:db/_design/:design/_update/:function", put(execute_update_script).post(execute_update_script))
+        .route("/:db/_design/:design/_update/:function/:document_id", put(execute_update_script_with_doc).post(execute_update_script_with_doc))
         .route("/:db/_all_docs", post(post_all_docs).get(all_docs))
 
         // Get a document
