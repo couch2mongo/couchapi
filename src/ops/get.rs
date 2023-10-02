@@ -175,8 +175,12 @@ fn extract_view_options_from_params(params: HashMap<String, String>) -> ViewOpti
         .cloned()
         .and_then(|s| s.parse::<i64>().ok());
 
+    let mut key = vec![json!(extract_key_json(params.get("key").cloned()))];
     let mut keys = extract_key_json(params.get("keys").cloned());
-    keys.extend(extract_key_json(params.get("key").cloned()));
+
+    if params.get("key").is_some() {
+        keys.append(&mut key);
+    }
 
     // Skip is more nuanced, we assume 0 if it's not present
     let skip = params
@@ -1180,6 +1184,25 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_view_options_from_params() {
+        let mut params = HashMap::new();
+        params.insert("key".to_string(), "[1, 2]".to_string());
+
+        let check = vec![json!(vec![1, 2])];
+
+        let result = extract_view_options_from_params(params);
+        assert_eq!(result.keys, check);
+
+        let mut params = HashMap::new();
+        params.insert("keys".to_string(), "[1]".to_string());
+
+        let check = vec![json!(1)];
+
+        let result = extract_view_options_from_params(params);
+        assert_eq!(result.keys, check);
+    }
+
+    #[test]
     fn test_create_filter_no_keys() {
         let design_view = DesignView {
             match_fields: vec!["field1".to_string(), "field2".to_string()],
@@ -1450,6 +1473,44 @@ mod tests {
                     ] }
                 ]
 
+            } ]
+        };
+
+        assert_eq!(filter, expected);
+    }
+
+    #[test]
+    fn test_create_filter_with_dual_key() {
+        let design_view = DesignView {
+            match_fields: vec!["field1".to_string(), "field2".to_string()],
+            sort_fields: None,
+            aggregation: vec![],
+            key_fields: vec![],
+            value_fields: vec![],
+            filter_insert_index: 0,
+            reduce: None,
+            single_item_key_is_list: false,
+            single_item_value_is_dict: false,
+            break_glass_js_script: None,
+        };
+
+        let key = vec![json!(1), json!(2)];
+        let keys = vec![json!(key)];
+
+        let mut filter: Document = doc! {};
+
+        map_keys(&design_view, &keys, &mut filter);
+
+        let expected = doc! {
+            "$and": [ {
+                "$or": [
+                    { "$and": [
+                        {
+                            "field1": Bson::Int64(1),
+                            "field2": Bson::Int64(2)
+                        }
+                    ] }
+                ]
             } ]
         };
 
