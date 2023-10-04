@@ -42,18 +42,18 @@ pub struct MongoDB {
 
 #[async_trait]
 impl Database for MongoDB {
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     async fn get_version(&self) -> Result<Document, Error> {
         self.db.run_command(doc! { "buildInfo": 1 }, None).await
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     async fn find_one(&self, coll: String, id: String) -> Result<Option<Document>, Error> {
         let c = self.db.collection::<Document>(&coll);
         c.find_one(doc! { "_id": id }, None).await
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     async fn replace_one(
         &self,
         coll: String,
@@ -65,7 +65,7 @@ impl Database for MongoDB {
         c.replace_one(filter, replacement, options).await
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     async fn delete_one(
         &self,
         coll: String,
@@ -76,7 +76,7 @@ impl Database for MongoDB {
         c.delete_one(filter, options).await.map(|r| r.deleted_count)
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     async fn aggregate(
         &self,
         coll: String,
@@ -98,7 +98,7 @@ impl Database for MongoDB {
         Ok(results)
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     async fn count(&self, coll: String) -> Result<u64, Error> {
         let c = self.db.collection::<Document>(&coll);
         c.estimated_document_count(None).await
