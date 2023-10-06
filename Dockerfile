@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/rust:1.72.1-bullseye AS builder
+FROM public.ecr.aws/docker/library/rust:1.73.0-bookworm AS builder
 
 WORKDIR /usr/src/app
 
@@ -9,7 +9,7 @@ RUN cargo build --release
 
 #############
 
-FROM public.ecr.aws/docker/library/debian:bullseye-slim AS runtime
+FROM public.ecr.aws/docker/library/debian:bookworm-slim AS runtime
 
 WORKDIR /usr/src/app
 

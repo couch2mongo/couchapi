@@ -28,23 +28,20 @@ pub async fn delete_item(
     )
     .await?;
 
-    if c.is_some() {
-        return Ok(c.unwrap());
+    if let Some(r) = c {
+        return Ok(r);
     }
 
     let existing_rev = match params.get("rev") {
         Some(rev) => Some(rev.to_string()),
         None => if_match,
-    };
-
-    if existing_rev.is_none() {
-        return Err((
-            StatusCode::PRECONDITION_FAILED,
-            Json(json!({"error": "missing rev"})),
-        ));
     }
+    .ok_or((
+        StatusCode::PRECONDITION_FAILED,
+        Json(json!({"error": "missing rev"})),
+    ))?;
 
-    let filter = bson::doc! { "_id": item.clone(), "_rev": existing_rev.clone() };
+    let filter = bson::doc! { "_id": item.clone(), "_rev": &existing_rev };
     let options = DeleteOptions::builder().build();
     match state.db.delete_one(db.clone(), filter, options).await {
         Ok(_) => (),
@@ -59,7 +56,7 @@ pub async fn delete_item(
         }
     };
 
-    Ok(Json(json!({"ok": true, "id": item, "rev": existing_rev.unwrap()})).into_response())
+    Ok(Json(json!({"ok": true, "id": item, "rev": &existing_rev})).into_response())
 }
 
 #[cfg(test)]

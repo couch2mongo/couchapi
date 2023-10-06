@@ -30,8 +30,8 @@ pub async fn new_item(
     )
     .await?;
 
-    if c.is_some() {
-        return Ok(c.unwrap());
+    if let Some(r) = c {
+        return Ok(r);
     }
 
     inner_new_item(db, None, state, params, payload, if_match).await
@@ -54,8 +54,8 @@ pub async fn new_item_with_id(
     )
     .await?;
 
-    if c.is_some() {
-        return Ok(c.unwrap());
+    if let Some(r) = c {
+        return Ok(r);
     }
 
     inner_new_item(db, Some(item), state, params, payload, if_match).await

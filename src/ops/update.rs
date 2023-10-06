@@ -262,8 +262,8 @@ pub async fn execute_update_script(
     )
     .await?;
 
-    if c.is_some() {
-        return Ok(c.unwrap());
+    if let Some(r) = c {
+        return Ok(r);
     }
 
     inner_execute_update_script(db, design, function, None, state, payload).await
@@ -286,8 +286,8 @@ pub async fn execute_update_script_with_doc(
     )
     .await?;
 
-    if c.is_some() {
-        return Ok(c.unwrap());
+    if let Some(r) = c {
+        return Ok(r);
     }
 
     inner_execute_update_script(db, design, func, Some(document_id), state, payload).await
