@@ -50,6 +50,12 @@ cargo run -- --help
 
 See `config.toml` for an example configuration file.
 
+## Pro-tips for development
+
+If you get a random error about `traits` add `#[debug_handler]` to
+the relevant handler and you'll get actual information. Do not commit code
+with this handler!
+
 ## Usage
 
 Whenever you see a dbname, it means a collection.

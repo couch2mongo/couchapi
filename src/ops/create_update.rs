@@ -110,9 +110,16 @@ pub async fn inner_new_item(
     // Within the collection, replace the document with the new one but only if the _rev of the
     // document matches the existing one.
     let mut filter = bson::doc! { "_id": id.clone() };
-    if let Some(rev) = existing_rev {
-        filter.insert("_rev", rev);
-    }
+
+    // When we don't have a _rev then _rev must NOT exist on an existing document or the rev
+    // has to match the existing one.
+    filter.insert(
+        "_rev",
+        match existing_rev {
+            Some(rev) => bson::doc! { "$eq": rev },
+            None => bson::doc! { "$exists": false},
+        },
+    );
 
     // This allows for the insert if one doesn't exist
     let options = ReplaceOptions::builder().upsert(true).build();

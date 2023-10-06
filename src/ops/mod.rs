@@ -1,3 +1,4 @@
+pub mod bulk;
 pub mod create_update;
 pub mod delete;
 pub mod get;

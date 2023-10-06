@@ -12,26 +12,13 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub async fn delete_item(
-    Extension(IfMatch(if_match)): Extension<IfMatch>,
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
-    Path((db, item)): Path<(String, String)>,
+pub async fn inner_delete_item(
+    state: Arc<AppState>,
+    db: String,
+    item: String,
+    params: HashMap<String, String>,
+    if_match: Option<String>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
-    let c = maybe_write(
-        &state.couchdb_details,
-        &db,
-        Method::DELETE,
-        None,
-        &item,
-        &params,
-    )
-    .await?;
-
-    if let Some(r) = c {
-        return Ok(r);
-    }
-
     let existing_rev = match params.get("rev") {
         Some(rev) => Some(rev.to_string()),
         None => if_match,
@@ -57,6 +44,29 @@ pub async fn delete_item(
     };
 
     Ok(Json(json!({"ok": true, "id": item, "rev": &existing_rev})).into_response())
+}
+
+pub async fn delete_item(
+    Extension(IfMatch(if_match)): Extension<IfMatch>,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+    Path((db, item)): Path<(String, String)>,
+) -> Result<Response, JsonWithStatusCodeResponse> {
+    let c = maybe_write(
+        &state.couchdb_details,
+        &db,
+        Method::DELETE,
+        None,
+        &item,
+        &params,
+    )
+    .await?;
+
+    if let Some(r) = c {
+        return Ok(r);
+    }
+
+    inner_delete_item(state, db, item, params, if_match).await
 }
 
 #[cfg(test)]

@@ -21,6 +21,7 @@ use crate::common::{
 use crate::config::Settings;
 use crate::couchdb::read_through;
 use crate::db::MongoDB;
+use crate::ops::bulk::bulk_docs;
 use crate::ops::create_update::{new_item, new_item_with_id};
 use crate::ops::delete::delete_item;
 use crate::ops::get::{
@@ -121,6 +122,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/:db/_design/:design/_view/:view/queries", post(post_multi_query))
         .route("/:db/_design/:design/_update/:function", put(execute_update_script).post(execute_update_script))
         .route("/:db/_design/:design/_update/:function/:document_id", put(execute_update_script_with_doc).post(execute_update_script_with_doc))
+        .route("/:db/_bulk_docs", post(bulk_docs))
         .route("/:db/_all_docs", post(post_all_docs).get(all_docs))
 
         // Get a document
