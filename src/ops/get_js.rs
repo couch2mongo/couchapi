@@ -7,6 +7,7 @@ use boa_engine::{Context, JsValue, Source};
 use boa_runtime::Console;
 use bson::Document;
 use serde_json::{json, Value};
+use std::panic;
 use tracing::warn;
 
 pub fn execute_script(
@@ -87,7 +88,20 @@ fn inner_execute_script(
             )
         })?;
 
-    let return_value_vector = if let Value::Array(v) = result.to_json(&mut context).unwrap() {
+    let json = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        result.to_json(&mut context).unwrap()
+    })).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!(
+                {
+                    "error": "chances are a bug in the script resulted in an undefined appearing the result variable."
+                }
+            )),
+        )
+    })?;
+
+    let return_value_vector = if let Value::Array(v) = json {
         v
     } else {
         return Err((
@@ -142,5 +156,39 @@ mod tests {
         let result = inner_execute_script(script, &view_options).unwrap();
 
         assert_eq!(result.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn execute_script_returns_an_undefined() {
+        let view_options = ViewOptions {
+            reduce: false,
+            group: false,
+            group_level: 0,
+            include_docs: false,
+            descending: false,
+            limit: None,
+            skip: 0,
+            start_key: vec![],
+            end_key: vec![],
+            startkey_docid: None,
+            endkey_docid: None,
+            keys: vec![],
+        };
+
+        let script = r#"
+            function main(params) {
+                return [
+                     {
+                        $sort: {
+                            "date": undefined
+                    }
+                }];
+            }
+
+            result = main(view_options)"#;
+
+        let result = inner_execute_script(script, &view_options);
+
+        assert!(result.is_err());
     }
 }
