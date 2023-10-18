@@ -514,7 +514,7 @@ fn create_filter(
                     filter.insert(
                         "_id",
                         doc! {
-                            "$lte": start_key_doc_id
+                            "$gte": start_key_doc_id
                         },
                     );
                 }
@@ -525,7 +525,7 @@ fn create_filter(
                     filter.insert(
                         "_id",
                         doc! {
-                            "$gte": end_key_doc_id
+                            "$lte": end_key_doc_id
                         },
                     );
                 }
