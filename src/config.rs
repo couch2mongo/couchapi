@@ -56,6 +56,9 @@ pub struct DesignView {
     pub single_item_value_is_dict: bool,
 
     pub break_glass_js_script: Option<String>,
+
+    #[serde(default)]
+    pub omit_null_keys_in_value: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]

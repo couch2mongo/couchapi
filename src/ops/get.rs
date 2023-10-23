@@ -43,6 +43,7 @@ pub fn create_all_docs_design_view() -> DesignView {
         single_item_key_is_list: false,
         single_item_value_is_dict: true,
         break_glass_js_script: None,
+        omit_null_keys_in_value: false,
     }
 }
 
@@ -245,6 +246,9 @@ async fn inner_get_view(
                 .value_fields
                 .iter()
                 .map(|x| (x, doc.get(x)))
+                .filter(|(_, val)| {
+                    !v.omit_null_keys_in_value || val.is_some_and(|v| *v != Bson::Null)
+                })
                 .collect::<HashMap<_, _>>();
 
             // If k is only one item then we can just return the value, otherwise we need to
@@ -1079,6 +1083,7 @@ mod tests {
             single_item_key_is_list: false,
             single_item_value_is_dict: false,
             break_glass_js_script: None,
+            omit_null_keys_in_value: false,
         };
 
         let mock = MockDatabase::new();
@@ -1215,6 +1220,7 @@ mod tests {
             single_item_key_is_list: false,
             single_item_value_is_dict: false,
             break_glass_js_script: None,
+            omit_null_keys_in_value: false,
         };
 
         let keys = vec![];
@@ -1260,6 +1266,7 @@ mod tests {
             single_item_key_is_list: false,
             single_item_value_is_dict: false,
             break_glass_js_script: None,
+            omit_null_keys_in_value: false,
         };
 
         let keys = vec![];
@@ -1298,6 +1305,7 @@ mod tests {
             single_item_key_is_list: false,
             single_item_value_is_dict: false,
             break_glass_js_script: None,
+            omit_null_keys_in_value: false,
         };
 
         let keys = vec![];
@@ -1347,6 +1355,7 @@ mod tests {
             single_item_key_is_list: false,
             single_item_value_is_dict: false,
             break_glass_js_script: None,
+            omit_null_keys_in_value: false,
         };
 
         let keys = vec![json![vec![json!("key1"), json!("key2")]]];
@@ -1394,6 +1403,7 @@ mod tests {
             single_item_key_is_list: false,
             single_item_value_is_dict: false,
             break_glass_js_script: None,
+            omit_null_keys_in_value: false,
         };
 
         let keys = vec![json!("key1"), json!("key2")];
@@ -1450,6 +1460,7 @@ mod tests {
             single_item_key_is_list: false,
             single_item_value_is_dict: false,
             break_glass_js_script: None,
+            omit_null_keys_in_value: false,
         };
 
         let keys = vec![json!(1), json!(2)];
@@ -1492,6 +1503,7 @@ mod tests {
             single_item_key_is_list: false,
             single_item_value_is_dict: false,
             break_glass_js_script: None,
+            omit_null_keys_in_value: false,
         };
 
         let key = vec![json!(1), json!(2)];
@@ -1530,6 +1542,7 @@ mod tests {
             single_item_key_is_list: false,
             single_item_value_is_dict: false,
             break_glass_js_script: None,
+            omit_null_keys_in_value: false,
         };
 
         let keys = vec![];
@@ -1574,6 +1587,7 @@ mod tests {
             single_item_key_is_list: false,
             single_item_value_is_dict: false,
             break_glass_js_script: None,
+            omit_null_keys_in_value: false,
         };
 
         let v = extract_pipeline_bson(&design_view, false, 0);
@@ -1593,6 +1607,7 @@ mod tests {
             single_item_key_is_list: false,
             single_item_value_is_dict: false,
             break_glass_js_script: None,
+            omit_null_keys_in_value: false,
         };
 
         let v = extract_pipeline_bson(&design_view, false, 0);
