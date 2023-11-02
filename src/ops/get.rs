@@ -494,14 +494,14 @@ fn create_filter(
 
                 let field = start
                     .filter(|val| *val != Bson::Null && *val != Bson::Document(Document::new()))
-                    .map(|start_val| doc! {"$gte": start_val})
+                    .map(|start_val| doc! {"$gte": &start_val})
                     .into_iter()
                     .chain(
                         // Only add the $lte condition if end is not null or an empty Document
                         end.filter(|val| {
                             *val != Bson::Null && *val != Bson::Document(Document::new())
                         })
-                        .map(|end_val| doc! {"$lte": end_val}),
+                        .map(|end_val| doc! {"$lte": &end_val}),
                     )
                     .fold(doc! {}, |mut acc, val| {
                         acc.extend(val);

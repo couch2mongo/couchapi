@@ -27,11 +27,8 @@ headers = "0.3.9"
 
 # MongoDB
 
-# ref: https://jira.mongodb.org/browse/RUST-1779
-#bson = "2.7.0"
-#mongodb = { version = "2.7.0", features = ["aws-auth"] }
-bson = { git = "https://github.com/mongodb/bson-rust", branch = "main" }
-mongodb = { git = "https://github.com/mongodb/mongo-rust-driver", rev = "897843b06aa286329b9f0222b37dd6490ee1c624", features = ["aws-auth"] }
+bson = "=2.7.0"
+mongodb = { version = "=2.7.1", features = ["aws-auth"] }
 
 # Generic JSON stuff
 serde = "1.0.188"
