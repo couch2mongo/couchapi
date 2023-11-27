@@ -576,7 +576,7 @@ pub async fn get_view(
     Query(params): Query<HashMap<String, String>>,
     Path((db, design, view)): Path<(String, String, String)>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
-    let actual_view = extract_view_from_views(&state, db.clone(), design.clone(), view.clone());
+    let actual_view = extract_view_from_views(&state, db.as_str(), design.as_str(), view.as_str());
     if actual_view.is_err() {
         if state.couchdb_details.is_some()
             && state
@@ -595,16 +595,15 @@ pub async fn get_view(
         return Err(actual_view.err().unwrap());
     }
 
-    inner_get_view(actual_view.unwrap(), db, state.as_ref(), params).await
+    inner_get_view(actual_view.unwrap(), db.to_string(), state.as_ref(), params).await
 }
 
-// TODO(lee): we should use &str for the parameters here but we'll need lifetimes defined
-fn extract_view_from_views(
-    state: &Arc<AppState>,
-    db: String,
-    design: String,
-    view: String,
-) -> Result<&DesignView, (StatusCode, Json<Value>)> {
+fn extract_view_from_views<'a>(
+    state: &'a Arc<AppState>,
+    db: &'a str,
+    design: &'a str,
+    view: &'a str,
+) -> Result<&'a DesignView, (StatusCode, Json<Value>)> {
     if state.views.is_none() {
         return Err((
             StatusCode::NOT_IMPLEMENTED,
@@ -614,21 +613,21 @@ fn extract_view_from_views(
 
     let views = state.views.as_ref().unwrap();
 
-    let design_mapping = match views.get(db.as_str()) {
+    let design_mapping = match views.get(db) {
         Some(design_mapping) => design_mapping,
         None => {
             return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
         }
     };
 
-    let view_group = match design_mapping.view_groups.get(design.as_str()) {
+    let view_group = match design_mapping.view_groups.get(design) {
         Some(view) => view,
         None => {
             return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
         }
     };
 
-    let actual_view = match view_group.get(view.as_str()) {
+    let actual_view = match view_group.get(view) {
         Some(view) => view,
         None => {
             return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
@@ -647,7 +646,7 @@ pub async fn post_get_view(
     let mut payload_map = convert_payload(payload.clone());
     payload_map.extend(params);
 
-    let actual_view = extract_view_from_views(&state, db.clone(), design.clone(), view.clone());
+    let actual_view = extract_view_from_views(&state, db.as_str(), design.as_str(), view.as_str());
     if actual_view.is_err() {
         if state.couchdb_details.is_some()
             && state
@@ -673,7 +672,13 @@ pub async fn post_get_view(
         return Err(actual_view.err().unwrap());
     }
 
-    inner_get_view(actual_view.unwrap(), db, state.as_ref(), payload_map).await
+    inner_get_view(
+        actual_view.unwrap(),
+        db.to_string(),
+        state.as_ref(),
+        payload_map,
+    )
+    .await
 }
 
 pub async fn post_multi_query(
@@ -682,7 +687,7 @@ pub async fn post_multi_query(
     Query(params): Query<HashMap<String, String>>,
     Json(payload): Json<Value>,
 ) -> Result<Response, (StatusCode, Json<Value>)> {
-    let actual_view = extract_view_from_views(&state, db.clone(), design.clone(), view.clone());
+    let actual_view = extract_view_from_views(&state, db.as_str(), design.as_str(), view.as_str());
 
     if actual_view.is_err() {
         if state.couchdb_details.is_some()
@@ -1015,7 +1020,7 @@ mod tests {
             couchdb_details: None,
         });
 
-        let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
+        let result = extract_view_from_views(&state, "db", "design", "view");
         assert!(result.is_err());
     }
 
@@ -1030,7 +1035,7 @@ mod tests {
             couchdb_details: None,
         });
 
-        let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
+        let result = extract_view_from_views(&state, "db", "design", "view");
         assert!(result.is_err());
     }
 
@@ -1047,7 +1052,7 @@ mod tests {
             couchdb_details: None,
         });
 
-        let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
+        let result = extract_view_from_views(&state, "db", "design", "view");
         assert!(result.is_err());
     }
 
@@ -1066,7 +1071,7 @@ mod tests {
             couchdb_details: None,
         });
 
-        let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
+        let result = extract_view_from_views(&state, "db", "design", "view");
         assert!(result.is_err());
     }
 
@@ -1101,7 +1106,7 @@ mod tests {
             couchdb_details: None,
         });
 
-        let result = extract_view_from_views(&state, "db".into(), "design".into(), "view".into());
+        let result = extract_view_from_views(&state, "db", "design", "view");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), &design_view);
     }
