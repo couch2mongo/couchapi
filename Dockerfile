@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/rust:1.73.0-bookworm AS builder
+FROM public.ecr.aws/docker/library/rust:1.74.0-bookworm AS builder
 
 WORKDIR /usr/src/app
 
