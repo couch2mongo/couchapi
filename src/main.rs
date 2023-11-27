@@ -7,6 +7,7 @@ mod common;
 mod config;
 mod couchdb;
 mod db;
+mod metrics;
 mod ops;
 mod state;
 
@@ -110,6 +111,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .get_mongodb_database()
         .await
         .expect("unable to connect to mongodb");
+
     let state = Arc::new(AppState {
         db: Box::new(MongoDB { db }),
         views: unwrapped_settings.views,
@@ -117,11 +119,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
         couchdb_details: unwrapped_settings.couchdb_settings,
     });
 
-    let app = NormalizePathLayer::trim_trailing_slash().layer(Router::new()
-        .route("/:db/_design/:design/_view/:view", post(post_get_view).get(get_view))
-        .route("/:db/_design/:design/_view/:view/queries", post(post_multi_query))
-        .route("/:db/_design/:design/_update/:function", put(execute_update_script).post(execute_update_script))
-        .route("/:db/_design/:design/_update/:function/:document_id", put(execute_update_script_with_doc).post(execute_update_script_with_doc))
+    metrics_prometheus::install();
+
+    let app = NormalizePathLayer::trim_trailing_slash().layer(
+        Router::new()
+        .route("/:db/_design/:design/_view/:view",
+            post(post_get_view)
+            .get(get_view)
+            .layer(middleware::from_fn(metrics::add_view_metrics))
+        )
+        .route("/:db/_design/:design/_view/:view/queries",
+            post(post_multi_query)
+            .layer(middleware::from_fn(metrics::add_view_metrics))
+        )
+
+        .route("/:db/_design/:design/_update/:function",
+            put(execute_update_script)
+            .post(execute_update_script)
+            .layer(middleware::from_fn(metrics::add_update_metrics))
+        )
+        .route("/:db/_design/:design/_update/:function/:document_id",
+            put(execute_update_script_with_doc)
+            .post(execute_update_script_with_doc)
+            .layer(middleware::from_fn(metrics::add_update_metrics))
+        )
+
         .route("/:db/_bulk_docs", post(bulk_docs))
         .route("/:db/_all_docs", post(post_all_docs).get(all_docs))
 
@@ -132,6 +154,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Post a document without the ID (usually it's in the document or we
         // generate it)
         .route("/:db", post(new_item).get(db_info))
+
+        .layer(middleware::from_fn(metrics::add_table_metrics))
+
+        .route("/metrics", get(metrics::collect_metrics))
         .route("/", get(server_info))
 
         .route_layer(middleware::from_fn(add_if_none_match))
@@ -153,7 +179,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .layer(middleware::from_fn(log_response_if_error))
 
         // Add state
-        .with_state(state));
+        .with_state(state),
+    );
 
     axum::Server::bind(&unwrapped_settings.listen_address.parse().unwrap())
         .serve(app.into_make_service())
