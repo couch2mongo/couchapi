@@ -487,7 +487,7 @@ fn create_filter(
                     false => (bson::to_bson(start).ok(), bson::to_bson(end).ok()),
                 };
 
-                if start == end && start.is_some() {
+                if start == end && start.is_some() && start != Some(Bson::Null) {
                     filter.insert(v.clone(), doc! {"$eq": start.unwrap()});
                     continue;
                 }
