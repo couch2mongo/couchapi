@@ -75,8 +75,7 @@ mod tests {
     use crate::db::*;
     use assert_json_diff::assert_json_eq;
     use bson::doc;
-    use hyper::body::to_bytes;
-    use reqwest::StatusCode;
+    use http_body_util::BodyExt;
     use serde_json::Value;
 
     #[tokio::test]
@@ -102,7 +101,10 @@ mod tests {
             Ok(response) => {
                 assert_eq!(response.status(), StatusCode::OK);
 
-                let body = to_bytes(response.into_body()).await.unwrap();
+                let body = BodyExt::collect(response.into_body())
+                    .await
+                    .unwrap()
+                    .to_bytes();
                 let actual_json_body: Value = serde_json::from_slice(&body).unwrap();
                 let expected_json_body = json!({
                     "ok": true,
@@ -227,7 +229,7 @@ mod tests {
         app_state: Arc<AppState>,
         db_name: String,
         item_id: String,
-    ) -> Result<Response, (StatusCode, Json<Value>)> {
+    ) -> Result<Response, JsonWithStatusCodeResponse> {
         delete_item(
             Extension(IfMatch(None)),
             State(app_state),

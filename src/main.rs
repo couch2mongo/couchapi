@@ -36,6 +36,7 @@ use crate::ops::get::{
 use crate::ops::update::{execute_update_script, execute_update_script_with_doc};
 use crate::ops::JsonWithStatusCodeResponse;
 use crate::state::AppState;
+use axum::body::Body;
 use axum::extract::{Json, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -43,18 +44,20 @@ use axum::routing::{get, post, put};
 use axum::ServiceExt;
 use axum::{middleware, Router};
 use clap::{command, Parser};
-use hyper::Method;
+use http_body_util::BodyExt;
 use maplit::hashmap;
+use reqwest::Method;
 use serde_json::{json, Value};
 use std::error::Error;
 use std::sync::Arc;
-use tower_http::normalize_path::NormalizePathLayer;
+use tokio::net::TcpListener;
+use tower_http::normalize_path::{NormalizePath, NormalizePathLayer};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tower_layer::Layer;
 use tracing::{instrument, warn, Level};
 
 #[derive(Parser, Debug)]
-#[command(author = None, version = None, about = "CouchDB to MongoDB Streamer", long_about = None)]
+#[command(author = None, version = None, about = "CouchDB Emulation API for MongoDB", long_about = None)]
 struct Args {
     #[arg(short, long, default_value = "config.toml")]
     config: String,
@@ -182,10 +185,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_state(state),
     );
 
-    axum::Server::bind(&unwrapped_settings.listen_address.parse().unwrap())
-        .serve(app.into_make_service())
+    let listener = TcpListener::bind(&unwrapped_settings.listen_address)
         .await
         .unwrap();
+    axum::serve(
+        listener,
+        <NormalizePath<Router> as ServiceExt<hyper::Request<Body>>>::into_make_service(app),
+    )
+    .await
+    .unwrap();
 
     Ok(())
 }
@@ -204,7 +212,7 @@ async fn server_info(
                     read_through(couchdb_details, Method::GET, None, "/", &hashmap! {}).await;
                 match response {
                     Ok(v) => {
-                        let body_bytes = hyper::body::to_bytes(v.into_body()).await.unwrap();
+                        let body_bytes = BodyExt::collect(v.into_body()).await.unwrap().to_bytes();
                         let body = String::from_utf8(body_bytes.to_vec()).unwrap();
                         Ok(serde_json::from_str(&body).unwrap())
                     }

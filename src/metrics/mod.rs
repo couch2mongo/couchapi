@@ -1,3 +1,4 @@
+use axum::body::Body;
 use axum::extract::Path;
 use axum::http::Request;
 use axum::middleware::Next;
@@ -5,20 +6,20 @@ use axum::response::Response;
 use prometheus::{Encoder, TextEncoder};
 use std::time::Instant;
 
-pub async fn add_table_metrics<B>(
+pub async fn add_table_metrics(
     Path((db,)): Path<(String,)>,
-    req: Request<B>,
-    next: Next<B>,
+    req: Request<Body>,
+    next: Next,
 ) -> Response {
     let labels = [("db", db)];
     metrics::increment_counter!("couchapi_table_operations_total", &labels);
     next.run(req).await
 }
 
-pub async fn add_view_metrics<B>(
+pub async fn add_view_metrics(
     Path((db, design, view)): Path<(String, String, String)>,
-    req: Request<B>,
-    next: Next<B>,
+    req: Request<Body>,
+    next: Next,
 ) -> Response {
     let start = Instant::now();
     let method = req.method().clone();
@@ -45,10 +46,10 @@ pub async fn add_view_metrics<B>(
     res
 }
 
-pub async fn add_update_metrics<B>(
+pub async fn add_update_metrics(
     Path((db, design, function)): Path<(String, String, String)>,
-    req: Request<B>,
-    next: Next<B>,
+    req: Request<Body>,
+    next: Next,
 ) -> Response {
     let start = Instant::now();
     let method = req.method().clone();

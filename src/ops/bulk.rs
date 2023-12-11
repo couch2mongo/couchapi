@@ -4,11 +4,12 @@ use crate::ops::delete::inner_delete_item;
 use crate::ops::JsonWithStatusCodeResponse;
 use crate::state::AppState;
 use axum::extract::{Path, State};
-use axum::http::{Method, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use hyper::body::to_bytes;
+use http_body_util::BodyExt;
 use maplit::hashmap;
+use reqwest::Method;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -91,7 +92,7 @@ pub async fn bulk_docs(
 
         match response {
             Ok(r) => {
-                let body = to_bytes(r.into_body()).await.unwrap();
+                let body = BodyExt::collect(r.into_body()).await.unwrap().to_bytes();
                 let json: Value = serde_json::from_slice(&body).unwrap();
                 collected_responses.push(json);
             }

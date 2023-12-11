@@ -2,7 +2,7 @@ use crate::config::CouchDb;
 use crate::ops::JsonWithStatusCodeResponse;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use hyper::http;
+use reqwest::Method;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use tracing::{info, instrument, warn};
@@ -11,7 +11,7 @@ use url::Url;
 #[instrument]
 pub async fn read_through(
     couchdb_details: &CouchDb,
-    method: http::method::Method,
+    method: Method,
     json_payload: Option<&Value>,
     path: &str,
     params: &HashMap<String, String>,
@@ -42,7 +42,7 @@ fn maybe_auth(couchdb_details: &CouchDb) -> Option<(&str, &str)> {
 
 #[instrument]
 async fn inner_couch(
-    method: http::method::Method,
+    method: Method,
     json_payload: Option<&Value>,
     url: &Url,
     params: &HashMap<String, String>,
@@ -102,7 +102,10 @@ async fn inner_couch(
             return;
         }
 
-        r.headers_mut().insert(k.clone(), v.clone());
+        r.headers_mut().insert(
+            hyper::header::HeaderName::from_bytes(k.as_str().as_bytes()).unwrap(),
+            hyper::header::HeaderValue::from_str(v.to_str().unwrap()).unwrap(),
+        );
     });
 
     // Add our own special header so we know we did a read-through in the response
@@ -116,7 +119,7 @@ async fn inner_couch(
 pub async fn maybe_write(
     couchdb_details: &Option<CouchDb>,
     mongodb_db: &str,
-    method: http::method::Method,
+    method: Method,
     json_payload: Option<&Value>,
     path: &str,
     params: &HashMap<String, String>,
@@ -153,9 +156,10 @@ pub async fn maybe_write(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http_body_util::BodyExt;
     use httpmock::Method::GET;
     use httpmock::MockServer;
-    use reqwest::StatusCode;
+    use hyper::StatusCode;
 
     #[tokio::test]
     async fn test_inner_couch_success() {
@@ -173,7 +177,7 @@ mod tests {
             .join("/test")
             .unwrap();
 
-        let method = http::method::Method::GET;
+        let method = Method::GET;
         let params = HashMap::new();
         let response = inner_couch(method, None, &url, &params, None).await;
 
@@ -183,7 +187,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
 
         let body = response.into_body();
-        let b = hyper::body::to_bytes(body).await.unwrap();
+        let b = BodyExt::collect(body).await.unwrap().to_bytes();
         let s = String::from_utf8(b.to_vec()).unwrap();
         assert_eq!(s, "success");
 

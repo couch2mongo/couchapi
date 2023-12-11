@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use boa_gc::Finalize;
 use bson::{doc, Bson, Document};
-use hyper::body::to_bytes;
+use http_body_util::BodyExt;
 use indexmap::IndexMap;
 use maplit::hashmap;
 use reqwest::Method;
@@ -741,7 +741,10 @@ pub async fn post_multi_query(
             for r in results {
                 match r {
                     Ok(response) => {
-                        let body = to_bytes(response.into_body()).await.unwrap();
+                        let body = BodyExt::collect(response.into_body())
+                            .await
+                            .unwrap()
+                            .to_bytes();
                         let actual_json_body: Value = serde_json::from_slice(&body).unwrap();
                         json_results.push(actual_json_body);
                     }
@@ -828,9 +831,7 @@ mod tests {
     use crate::db::*;
     use assert_json_diff::assert_json_eq;
     use bson::doc;
-    use hyper::body::to_bytes;
     use maplit::hashmap;
-    use reqwest::StatusCode;
 
     #[tokio::test]
     async fn test_get_item_basic() {
@@ -863,7 +864,10 @@ mod tests {
             Ok(response) => {
                 assert_eq!(response.status(), StatusCode::OK);
 
-                let body = to_bytes(response.into_body()).await.unwrap();
+                let body = BodyExt::collect(response.into_body())
+                    .await
+                    .unwrap()
+                    .to_bytes();
 
                 let actual_json_body: Value = serde_json::from_slice(&body).unwrap();
                 let expected_json_body = json!({
@@ -913,7 +917,10 @@ mod tests {
             Err((status_code, json)) => {
                 assert_eq!(status_code, StatusCode::NOT_FOUND);
 
-                let body = to_bytes(json.into_response().into_body()).await.unwrap();
+                let body = BodyExt::collect(json.into_response().into_body())
+                    .await
+                    .unwrap()
+                    .to_bytes();
                 let actual_json_body: Value = serde_json::from_slice(&body).unwrap();
                 let expected_json_body = json!({
                     "error": "not found",
@@ -959,7 +966,10 @@ mod tests {
             Err((status_code, json)) => {
                 assert_eq!(status_code, StatusCode::NOT_MODIFIED);
 
-                let body = to_bytes(json.into_response().into_body()).await.unwrap();
+                let body = BodyExt::collect(json.into_response().into_body())
+                    .await
+                    .unwrap()
+                    .to_bytes();
                 let actual_json_body: Value = serde_json::from_slice(&body).unwrap();
                 let expected_json_body = json!({});
                 assert_json_eq!(actual_json_body, expected_json_body);
@@ -997,7 +1007,10 @@ mod tests {
             Ok(response) => {
                 assert_eq!(response.status(), StatusCode::PRECONDITION_FAILED);
 
-                let body = to_bytes(response.into_body()).await.unwrap();
+                let body = BodyExt::collect(response.into_body())
+                    .await
+                    .unwrap()
+                    .to_bytes();
                 assert_eq!(body, "");
             }
             Err((status_code, _json)) => {

@@ -4,6 +4,7 @@ use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
+use http_body_util::BodyExt;
 use tracing::warn;
 
 /// Common middleware for all requests.
@@ -18,7 +19,7 @@ pub async fn not_implemented_handler<B>(_: Request<B>) -> Response {
 
 /// Add a `must-revalidate` Cache-Control header to every response.
 /// ref: https://docs.couchdb.org/en/stable/api/basics.html#response-headers
-pub async fn always_add_must_revalidate<B>(req: Request<B>, next: Next<B>) -> Response {
+pub async fn always_add_must_revalidate(req: Request<Body>, next: Next) -> Response {
     let mut res = next.run(req).await;
     res.headers_mut()
         .insert("Cache-Control", "must-revalidate".parse().unwrap());
@@ -26,7 +27,7 @@ pub async fn always_add_must_revalidate<B>(req: Request<B>, next: Next<B>) -> Re
 }
 
 /// Add a `Server` header to every response.
-pub async fn add_server_header<B>(req: Request<B>, next: Next<B>) -> Response {
+pub async fn add_server_header(req: Request<Body>, next: Next) -> Response {
     let mut res = next.run(req).await;
     res.headers_mut().insert(
         "Server",
@@ -40,7 +41,7 @@ where
     B: axum::body::HttpBody<Data = Bytes>,
     B::Error: std::fmt::Display,
 {
-    let bytes = match hyper::body::to_bytes(body).await {
+    let bytes = match BodyExt::collect(body).await {
         Ok(bytes) => bytes,
         Err(err) => {
             return Err((
@@ -50,16 +51,18 @@ where
         }
     };
 
-    if let Ok(body) = std::str::from_utf8(&bytes) {
+    let collected_bytes = bytes.to_bytes();
+
+    if let Ok(body) = std::str::from_utf8(&collected_bytes) {
         if !body.is_empty() {
             warn!(body = body, "response log");
         }
     }
 
-    Ok(bytes)
+    Ok(collected_bytes)
 }
 
-pub async fn log_response_if_error<B>(req: Request<B>, next: Next<B>) -> Response {
+pub async fn log_response_if_error(req: Request<Body>, next: Next) -> Response {
     let res = next.run(req).await;
 
     if res.status().is_server_error() {
@@ -79,10 +82,7 @@ pub async fn log_response_if_error<B>(req: Request<B>, next: Next<B>) -> Respons
 pub struct IfNoneMatch(pub Option<String>);
 
 /// Extract the `If-None-Match` header from the request and store it in the request extensions.
-pub async fn add_if_none_match<B>(
-    mut req: Request<B>,
-    next: Next<B>,
-) -> Result<Response, StatusCode> {
+pub async fn add_if_none_match(mut req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
     // We deal with borrowing first as it's just easier - I promise you. It's because otherwise
     // we hit https://doc.rust-lang.org/error_codes/E0502.html.
     let headers = req.headers().clone();
@@ -101,7 +101,7 @@ pub async fn add_if_none_match<B>(
 pub struct IfMatch(pub Option<String>);
 
 /// Extract the `If-Match` header from the request and store it in the request extensions.
-pub async fn add_if_match<B>(mut req: Request<B>, next: Next<B>) -> Result<Response, StatusCode> {
+pub async fn add_if_match(mut req: Request<Body>, next: Next) -> Result<Response, StatusCode> {
     // We deal with borrowing first as it's just easier - I promise you. It's because otherwise
     // we hit https://doc.rust-lang.org/error_codes/E0502.html.
     let headers = req.headers().clone();
@@ -116,9 +116,9 @@ pub async fn add_if_match<B>(mut req: Request<B>, next: Next<B>) -> Result<Respo
     Ok(next.run(req).await)
 }
 
-pub async fn add_content_type_if_needed<B>(
-    mut req: Request<B>,
-    next: Next<B>,
+pub async fn add_content_type_if_needed(
+    mut req: Request<Body>,
+    next: Next,
 ) -> Result<Response, StatusCode> {
     let headers = req.headers_mut();
     let empty_existing = http::HeaderValue::from_static("");
@@ -144,9 +144,9 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::routing::get;
-    use axum::{middleware, Extension, Router, Server};
-    use http::header::HeaderValue;
-    use std::net::TcpListener;
+    use axum::{middleware, Extension, Router};
+    use reqwest::header::HeaderValue;
+    use tokio::net::TcpListener;
 
     // Basic handler for testing
     async fn handler() -> &'static str {
@@ -165,15 +165,11 @@ mod tests {
         let app = Router::new()
             .route("/", get(handler))
             .layer(middleware::from_fn(always_add_must_revalidate));
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
         tokio::spawn(async {
-            Server::from_tcp(listener)
-                .unwrap()
-                .serve(app.into_make_service())
-                .await
-                .unwrap()
+            axum::serve(listener, app).await.unwrap();
         });
 
         let client = reqwest::Client::new();
@@ -187,15 +183,11 @@ mod tests {
         let app = Router::new()
             .route("/", get(handler))
             .layer(middleware::from_fn(add_server_header));
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
         tokio::spawn(async {
-            Server::from_tcp(listener)
-                .unwrap()
-                .serve(app.into_make_service())
-                .await
-                .unwrap()
+            axum::serve(listener, app).await.unwrap();
         });
 
         let client = reqwest::Client::new();
@@ -216,15 +208,11 @@ mod tests {
             .route("/", get(if_none_match_handler))
             .route_layer(middleware::from_fn(add_if_none_match));
 
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
         tokio::spawn(async {
-            Server::from_tcp(listener)
-                .unwrap()
-                .serve(app.into_make_service())
-                .await
-                .unwrap()
+            axum::serve(listener, app).await.unwrap();
         });
 
         let client = reqwest::Client::new();
@@ -249,15 +237,11 @@ mod tests {
             .route("/", get(if_match_handler))
             .route_layer(middleware::from_fn(add_if_match));
 
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
         tokio::spawn(async {
-            Server::from_tcp(listener)
-                .unwrap()
-                .serve(app.into_make_service())
-                .await
-                .unwrap()
+            axum::serve(listener, app).await.unwrap();
         });
 
         let client = reqwest::Client::new();
