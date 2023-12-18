@@ -13,26 +13,22 @@ use tracing::debug;
 #[cfg_attr(test, automock)]
 pub trait Database {
     async fn get_version(&self) -> Result<Document, Error>;
-    async fn find_one(&self, coll: String, id: String) -> Result<Option<Document>, Error>;
+    async fn find_one(&self, coll: &str, id: &str) -> Result<Option<Document>, Error>;
     async fn replace_one(
         &self,
-        coll: String,
+        coll: &str,
         filter: Document,
         replacement: Document,
         options: ReplaceOptions,
     ) -> Result<UpdateResult, Error>;
     async fn delete_one(
         &self,
-        coll: String,
+        coll: &str,
         filter: Document,
         options: DeleteOptions,
     ) -> Result<u64, Error>;
-    async fn aggregate(
-        &self,
-        coll: String,
-        pipeline: Vec<Document>,
-    ) -> Result<Vec<Document>, Error>;
-    async fn count(&self, coll: String) -> Result<u64, Error>;
+    async fn aggregate(&self, coll: &str, pipeline: Vec<Document>) -> Result<Vec<Document>, Error>;
+    async fn count(&self, coll: &str) -> Result<u64, Error>;
 }
 
 #[derive(Debug)]
@@ -48,47 +44,43 @@ impl Database for MongoDB {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn find_one(&self, coll: String, id: String) -> Result<Option<Document>, Error> {
-        let c = self.db.collection::<Document>(&coll);
+    async fn find_one(&self, coll: &str, id: &str) -> Result<Option<Document>, Error> {
+        let c = self.db.collection::<Document>(coll);
         c.find_one(doc! { "_id": id }, None).await
     }
 
     #[tracing::instrument(skip(self))]
     async fn replace_one(
         &self,
-        coll: String,
+        coll: &str,
         filter: Document,
         replacement: Document,
         options: ReplaceOptions,
     ) -> Result<UpdateResult, Error> {
-        let c = self.db.collection::<Document>(&coll);
+        let c = self.db.collection::<Document>(coll);
         c.replace_one(filter, replacement, options).await
     }
 
     #[tracing::instrument(skip(self))]
     async fn delete_one(
         &self,
-        coll: String,
+        coll: &str,
         filter: Document,
         options: DeleteOptions,
     ) -> Result<u64, Error> {
-        let c = self.db.collection::<Document>(&coll);
+        let c = self.db.collection::<Document>(coll);
         c.delete_one(filter, options).await.map(|r| r.deleted_count)
     }
 
     #[tracing::instrument(skip(self))]
-    async fn aggregate(
-        &self,
-        coll: String,
-        pipeline: Vec<Document>,
-    ) -> Result<Vec<Document>, Error> {
+    async fn aggregate(&self, coll: &str, pipeline: Vec<Document>) -> Result<Vec<Document>, Error> {
         debug!(
             "aggregate: coll: {}, pipeline: {:?}",
             coll,
             serde_json::to_string(&pipeline).unwrap()
         );
 
-        let c = self.db.collection::<Document>(&coll);
+        let c = self.db.collection::<Document>(coll);
         let mut cursor = c.aggregate(pipeline, None).await?;
         let mut results = Vec::new();
 
@@ -99,8 +91,8 @@ impl Database for MongoDB {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn count(&self, coll: String) -> Result<u64, Error> {
-        let c = self.db.collection::<Document>(&coll);
+    async fn count(&self, coll: &str) -> Result<u64, Error> {
+        let c = self.db.collection::<Document>(coll);
         c.estimated_document_count(None).await
     }
 }

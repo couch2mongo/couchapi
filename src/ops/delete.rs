@@ -30,7 +30,7 @@ pub async fn inner_delete_item(
 
     let filter = bson::doc! { "_id": item.clone(), "_rev": &existing_rev };
     let options = DeleteOptions::builder().build();
-    match state.db.delete_one(db.clone(), filter, options).await {
+    match state.db.delete_one(db.as_str(), filter, options).await {
         Ok(_) => (),
         Err(_) => {
             return match check_conflict(state, db.clone(), &item.clone()).await {

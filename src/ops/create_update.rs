@@ -70,17 +70,14 @@ pub async fn inner_new_item(
     rev_if_match: Option<String>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
     // Generate an id if one wasn't provided through either the URL or the payload
-    let id = match item {
-        Some(i) => i,
-        None => match payload.get("_id").and_then(|id| id.as_str()) {
-            Some(id) => id.to_string(),
-            None => {
-                let mut id = Uuid::new_v4().to_string();
-                id.retain(|c| c != '-');
-                id
-            }
-        },
-    };
+    let id = item.unwrap_or_else(|| match payload.get("_id").and_then(|id| id.as_str()) {
+        Some(id) => id.to_string(),
+        None => {
+            let mut id = Uuid::new_v4().to_string();
+            id.retain(|c| c != '-');
+            id
+        }
+    });
 
     let existing_rev = match payload.get("_rev").and_then(|rev| rev.as_str()) {
         Some(rev) => Some(rev.to_string()),
@@ -127,7 +124,7 @@ pub async fn inner_new_item(
     // Try and get the document in
     match state
         .db
-        .replace_one(db.clone(), filter, new_bson_document.clone(), options)
+        .replace_one(db.as_str(), filter, new_bson_document.clone(), options)
         .await
     {
         Ok(_) => (),

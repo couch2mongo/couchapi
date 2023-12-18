@@ -23,7 +23,7 @@ pub async fn check_conflict(
     id: &str,
 ) -> Result<JsonWithStatusCodeResponse, Box<dyn Error>> {
     // Grab the document to determine if it exists or not
-    let document = match state.db.find_one(collection, id.to_string()).await {
+    let document = match state.db.find_one(&collection, id).await {
         Ok(document) => document,
         Err(e) => {
             return Err(Box::new(e));
@@ -45,7 +45,7 @@ pub async fn get_item_from_db(
     db: String,
     id: String,
 ) -> Result<Document, JsonWithStatusCodeResponse> {
-    let document = match state.db.find_one(db, id).await {
+    let document = match state.db.find_one(&db, &id).await {
         Ok(d) => match d {
             Some(d) => d,
             None => {

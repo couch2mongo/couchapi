@@ -79,7 +79,7 @@ pub async fn get_item(
             if !latest && rev.as_str() != document.get_str("_rev").unwrap() {
                 return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
             }
-            Some(rev.clone())
+            Some(rev)
         }
         None => None,
     };
@@ -221,7 +221,7 @@ async fn inner_get_view(
         create_automated_pipeline(v, &view_options).await?
     };
 
-    let results_run = state.db.aggregate(db.clone(), pipeline).await;
+    let results_run = state.db.aggregate(db.as_str(), pipeline).await;
     if results_run.is_err() {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -286,19 +286,16 @@ async fn inner_get_view(
     if view_options.include_docs {
         for item in &mut items {
             let id = item.get("id").unwrap().as_str().unwrap();
-            let doc_result = state.db.find_one(db.clone(), id.to_string()).await;
+            let doc_result = state.db.find_one(db.as_str(), id).await;
             let doc = match doc_result {
-                Ok(doc) => match doc {
-                    Some(doc) => doc,
-                    None => doc! {},
-                },
+                Ok(doc) => doc.unwrap_or_else(|| doc! {}),
                 Err(_) => doc! {},
             };
             item["doc"] = json!(doc);
         }
     }
 
-    let count = state.db.count(db.clone()).await.map_err(|e| {
+    let count = state.db.count(db.as_str()).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": e.to_string()})),
