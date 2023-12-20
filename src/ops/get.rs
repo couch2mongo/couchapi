@@ -47,6 +47,51 @@ pub fn create_all_docs_design_view() -> DesignView {
     }
 }
 
+pub async fn head_item(
+    Extension(IfNoneMatch(if_none_match)): Extension<IfNoneMatch>,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+    Path((db, item)): Path<(String, String)>,
+) -> Result<Response, JsonWithStatusCodeResponse> {
+    let document = get_item_from_db(state, db, item).await?;
+
+    // Emulate https://datatracker.ietf.org/doc/html/rfc7232#section-3.2
+    if let Some(value) = handle_if_none_match(if_none_match, &document) {
+        return value;
+    }
+
+    // Forces retrieving latest "leaf" revision, no matter what rev was requested. Default is false
+    let latest = params.get("latest").map(|b| b == "true").unwrap_or(false);
+
+    // Forces the use of the rev parameter to match the document revision but only if latest is
+    // false
+    if let Some(rev) = params.get("rev") {
+        if !latest && rev != document.get_str("_rev").unwrap() {
+            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
+        }
+    };
+
+    Ok(Response::default())
+}
+
+fn handle_if_none_match(
+    if_none_match: Option<String>,
+    document: &Document,
+) -> Option<Result<Response, JsonWithStatusCodeResponse>> {
+    if if_none_match.is_some() {
+        return Some(
+            if if_none_match.as_ref().unwrap() == document.get_str("_rev").unwrap() {
+                Err((StatusCode::NOT_MODIFIED, Json(json!({}))))
+            } else {
+                let mut r = Response::default();
+                *r.status_mut() = StatusCode::PRECONDITION_FAILED;
+                Ok(r)
+            },
+        );
+    }
+    None
+}
+
 pub async fn get_item(
     Extension(IfNoneMatch(if_none_match)): Extension<IfNoneMatch>,
     State(state): State<Arc<AppState>>,
@@ -56,27 +101,18 @@ pub async fn get_item(
     let document = get_item_from_db(state, db, item).await?;
 
     // Emulate https://datatracker.ietf.org/doc/html/rfc7232#section-3.2
-    if if_none_match.is_some() {
-        return if if_none_match.as_ref().unwrap() == document.get_str("_rev").unwrap() {
-            Err((StatusCode::NOT_MODIFIED, Json(json!({}))))
-        } else {
-            let mut r = Response::default();
-            *r.status_mut() = StatusCode::PRECONDITION_FAILED;
-            Ok(r)
-        };
+    if let Some(value) = handle_if_none_match(if_none_match, &document) {
+        return value;
     }
 
     // Forces retrieving latest "leaf" revision, no matter what rev was requested. Default is false
-    let latest = params
-        .get("latest")
-        .map(|b| b.as_str() == "true")
-        .unwrap_or(false);
+    let latest = params.get("latest").map(|b| b == "true").unwrap_or(false);
 
     // Forces the use of the rev parameter to match the document revision but only if latest is
     // false
     let rev = match params.get("rev") {
         Some(rev) => {
-            if !latest && rev.as_str() != document.get_str("_rev").unwrap() {
+            if !latest && rev != document.get_str("_rev").unwrap() {
                 return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
             }
             Some(rev)

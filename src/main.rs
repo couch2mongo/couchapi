@@ -29,6 +29,7 @@ use crate::ops::get::{
     all_docs,
     get_item,
     get_view,
+    head_item,
     post_all_docs,
     post_get_view,
     post_multi_query,
@@ -151,7 +152,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/:db/_all_docs", post(post_all_docs).get(all_docs))
 
         // Get a document
-        .route("/:db/:item", get(get_item)
+        .route("/:db/:item", get(get_item).head(head_item)
             .put(new_item_with_id).delete(delete_item))
 
         // Post a document without the ID (usually it's in the document or we
