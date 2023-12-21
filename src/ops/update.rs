@@ -9,6 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use boa_engine::property::Attribute;
 use boa_engine::{Context, JsValue, Source};
+use boa_runtime::Console;
 use bson::Document;
 use maplit::hashmap;
 use reqwest::Method;
@@ -48,12 +49,28 @@ pub async fn inner_execute_update_script(
     }
 
     let document = if let Some(document_id) = document_id {
-        Some(get_item_from_db(state.clone(), db.clone(), document_id.to_string()).await?)
+        match get_item_from_db(state.clone(), db.clone(), document_id.to_string()).await {
+            Ok(d) => Some(d),
+            Err((status_code, _)) => {
+                // We're actually OK here - some update handler scripts expect no document
+                // to exist, and perform an upsert operation. So we don't want to short-circuit
+                // here, instead catch and return None.
+                if status_code == StatusCode::NOT_FOUND {
+                    None
+                } else {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"error": "error getting document"})),
+                    ));
+                }
+            }
+        }
     } else {
         None
     };
 
     let document_json = document.as_ref().map_or_else(|| json!({}), |d| json!(d));
+
     let return_value = execute_javascript(path, &document, &document_json, &payload)?;
 
     let return_value_vector = if let Value::Array(v) = return_value {
@@ -213,6 +230,16 @@ fn execute_javascript(
             )
         })?;
 
+    let console = Console::init(&mut context);
+    context
+        .register_global_property(Console::NAME, console, Attribute::all())
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            )
+        })?;
+
     let javascript_file = std::fs::read_to_string(path).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -221,7 +248,7 @@ fn execute_javascript(
     })?;
 
     let javascript_file = format!("f = {}", javascript_file);
-    let javascript_file = format!("{}\n\nresult = f()", javascript_file);
+    let javascript_file = format!("{}\n\nresult = f(doc, req)", javascript_file);
 
     let src = Source::from_bytes(javascript_file.as_bytes());
 
