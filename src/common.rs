@@ -1,4 +1,5 @@
 use axum::body::Body;
+use axum::extract;
 use axum::http;
 use axum::http::{Request, StatusCode};
 use axum::middleware::Next;
@@ -137,6 +138,57 @@ pub async fn add_content_type_if_needed(
     }
 
     Ok(next.run(req).await)
+}
+
+pub async fn print_request_response(
+    req: extract::Request,
+    next: Next,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let (parts, body) = req.into_parts();
+
+    // Convert headers to JSON and print to log
+    let headers = parts.clone().headers;
+    let mut headers_map = serde_json::Map::new();
+    for (key, value) in headers.iter() {
+        let key = key.as_str().to_string();
+        let value = value.to_str().unwrap().to_string();
+        headers_map.insert(key, serde_json::Value::String(value));
+    }
+    let headers_json = serde_json::Value::Object(headers_map);
+    tracing::debug!(headers = headers_json.to_string(), "request headers");
+
+    let bytes = buffer_and_print("request", body).await?;
+    let req = Request::from_parts(parts, Body::from(bytes));
+
+    let res = next.run(req).await;
+
+    let (parts, body) = res.into_parts();
+    let bytes = buffer_and_print("response", body).await?;
+    let res = Response::from_parts(parts, Body::from(bytes));
+
+    Ok(res)
+}
+
+async fn buffer_and_print<B>(direction: &str, body: B) -> Result<Bytes, (StatusCode, String)>
+where
+    B: axum::body::HttpBody<Data = Bytes>,
+    B::Error: std::fmt::Display,
+{
+    let bytes = match body.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(err) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("failed to read {direction} body: {err}"),
+            ));
+        }
+    };
+
+    if let Ok(body) = std::str::from_utf8(&bytes) {
+        tracing::debug!("{direction} body = {body:?}");
+    }
+
+    Ok(bytes)
 }
 
 #[cfg(test)]

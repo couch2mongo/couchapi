@@ -105,6 +105,9 @@ pub struct Settings {
     #[serde(default)]
     pub debug: bool,
 
+    #[serde(default)]
+    pub debug_requests: bool,
+
     #[serde(default = "default_listen_address")]
     pub listen_address: String,
 

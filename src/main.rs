@@ -18,6 +18,7 @@ use crate::common::{
     add_server_header,
     always_add_must_revalidate,
     log_response_if_error,
+    print_request_response,
 };
 use crate::config::Settings;
 use crate::couchdb::read_through;
@@ -124,27 +125,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     metrics_prometheus::install();
 
-    let app = NormalizePathLayer::trim_trailing_slash().layer(
-        Router::new()
+    let mut router = Router::new()
         .route("/:db/_design/:design/_view/:view",
-            post(post_get_view)
-            .get(get_view)
-            .layer(middleware::from_fn(metrics::add_view_metrics))
+               post(post_get_view)
+                   .get(get_view)
+                   .layer(middleware::from_fn(metrics::add_view_metrics))
         )
         .route("/:db/_design/:design/_view/:view/queries",
-            post(post_multi_query)
-            .layer(middleware::from_fn(metrics::add_view_metrics))
+               post(post_multi_query)
+                   .layer(middleware::from_fn(metrics::add_view_metrics))
         )
 
         .route("/:db/_design/:design/_update/:function",
-            put(execute_update_script)
-            .post(execute_update_script)
-            .layer(middleware::from_fn(metrics::add_update_metrics))
+               put(execute_update_script)
+                   .post(execute_update_script)
+                   .layer(middleware::from_fn(metrics::add_update_metrics))
         )
         .route("/:db/_design/:design/_update/:function/:document_id",
-            put(execute_update_script_with_doc)
-            .post(execute_update_script_with_doc)
-            .layer(middleware::from_fn(metrics::add_update_metrics))
+               put(execute_update_script_with_doc)
+                   .post(execute_update_script_with_doc)
+                   .layer(middleware::from_fn(metrics::add_update_metrics))
         )
 
         .route("/:db/_bulk_docs", post(bulk_docs))
@@ -179,11 +179,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .layer(middleware::from_fn(always_add_must_revalidate))
         .layer(middleware::from_fn(add_server_header))
 
-        .layer(middleware::from_fn(log_response_if_error))
+        .layer(middleware::from_fn(log_response_if_error));
 
-        // Add state
-        .with_state(state),
-    );
+    if unwrapped_settings.debug_requests {
+        router = router.layer(middleware::from_fn(print_request_response));
+    }
+
+    let app = NormalizePathLayer::trim_trailing_slash().layer(router.with_state(state));
 
     let listener = TcpListener::bind(&unwrapped_settings.listen_address)
         .await
