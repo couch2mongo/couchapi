@@ -259,6 +259,19 @@ fn execute_javascript(
         )
     })?;
 
+    // Bump the result through a back n forth through JSON to ensure that we have a valid
+    // JSON object at the end of the process. This will strip things like undefined etc.
+    context
+        .eval(Source::from_bytes(
+            "result = JSON.parse(JSON.stringify(result));".as_bytes(),
+        ))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            )
+        })?;
+
     let result = context
         .global_object()
         .get("result", &mut context)
