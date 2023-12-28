@@ -264,7 +264,7 @@ async fn inner_get_view(
             let v = if value.keys().len() == 1 && !v.single_item_value_is_dict {
                 // We want the only item in the list so we Collect the values into a Vec, and
                 // grab the first item. This is safe because we know there is only one item.
-                json!(value.values().collect::<Vec<_>>().get(0).unwrap())
+                json!(value.values().collect::<Vec<_>>().first().unwrap())
             } else {
                 json!(value)
             };

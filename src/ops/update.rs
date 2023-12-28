@@ -48,7 +48,7 @@ pub async fn inner_execute_update_script(
         ));
     }
 
-    let document = if let Some(document_id) = document_id {
+    let document = if let Some(document_id) = document_id.clone() {
         match get_item_from_db(state.clone(), db.clone(), document_id.to_string()).await {
             Ok(d) => Some(d),
             Err((status_code, _)) => {
@@ -71,7 +71,7 @@ pub async fn inner_execute_update_script(
 
     let document_json = document.as_ref().map_or_else(|| json!({}), |d| json!(d));
 
-    let return_value = execute_javascript(path, &document, &document_json, &payload)?;
+    let return_value = execute_javascript(path, &document_id, &document, &document_json, &payload)?;
 
     let return_value_vector = if let Value::Array(v) = return_value {
         v
@@ -184,6 +184,7 @@ pub async fn inner_execute_update_script(
 
 fn execute_javascript(
     path: &std::path::Path,
+    req_id: &Option<String>,
     document: &Option<Document>,
     document_json: &Value,
     payload: &Value,
@@ -202,6 +203,7 @@ fn execute_javascript(
     };
 
     let req = json!({
+        "id": req_id,
         "body": payload.to_string(),
         "uuid": uuid::Uuid::new_v4().to_string(),
     });
