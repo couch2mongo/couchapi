@@ -52,6 +52,7 @@ use serde_json::{json, Value};
 use std::error::Error;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tower_http::decompression::RequestDecompressionLayer;
 use tower_http::normalize_path::{NormalizePath, NormalizePathLayer};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tower_layer::Layer;
@@ -165,6 +166,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         .route_layer(middleware::from_fn(add_if_none_match))
         .route_layer(middleware::from_fn(add_if_match))
+
+        .layer(RequestDecompressionLayer::new())
 
         // This magic sets up logging to look like normal request logging.
         .layer(TraceLayer::new_for_http()
