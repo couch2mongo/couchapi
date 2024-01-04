@@ -11,6 +11,7 @@ use boa_engine::property::Attribute;
 use boa_engine::{Context, JsValue, Source};
 use boa_runtime::Console;
 use bson::Document;
+use http_body_util::BodyExt;
 use maplit::hashmap;
 use reqwest::Method;
 use serde_json::{json, Map, Value};
@@ -87,6 +88,8 @@ pub async fn inner_execute_update_script(
     let returned_response =
         get_returned_value(&return_value_vector, 1, "return value is not an object")?;
 
+    let mut response = Response::new(String::new());
+
     if let Some(returned_document) = returned_document {
         let new_document_id = returned_document
             .get("_id")
@@ -105,7 +108,7 @@ pub async fn inner_execute_update_script(
             })?
             .to_string();
 
-        inner_new_item(
+        let item_response = inner_new_item(
             db.clone(),
             Some(new_document_id),
             state,
@@ -114,6 +117,39 @@ pub async fn inner_execute_update_script(
             None,
         )
         .await?;
+
+        let body = BodyExt::collect(item_response.into_body())
+            .await
+            .unwrap()
+            .to_bytes();
+
+        let body_json: Value = serde_json::from_slice(&body).map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "invalid json returned"})),
+            )
+        })?;
+
+        let new_rev = body_json
+            .get("rev")
+            .and_then(|r| r.as_str())
+            .ok_or_else(|| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "invalid json returned"})),
+                )
+            })?
+            .to_string();
+
+        response.headers_mut().insert(
+            "x-couch-update-newrev",
+            HeaderValue::from_str(&new_rev).map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "invalid json returned"})),
+                )
+            })?,
+        );
     }
 
     if returned_response.is_none() {
@@ -123,7 +159,6 @@ pub async fn inner_execute_update_script(
         ));
     }
 
-    let mut response = Response::new(String::new());
     *response.status_mut() = StatusCode::from_u16(
         returned_response
             .unwrap()
