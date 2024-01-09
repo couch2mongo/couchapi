@@ -81,7 +81,10 @@ impl Database for MongoDB {
         );
 
         let c = self.db.collection::<Document>(coll);
-        let mut cursor = c.aggregate(pipeline, None).await?;
+        let options = mongodb::options::AggregateOptions::builder()
+            .allow_disk_use(Some(true))
+            .build();
+        let mut cursor = c.aggregate(pipeline, options).await?;
         let mut results = Vec::new();
 
         while let Some(doc) = cursor.next().await {
