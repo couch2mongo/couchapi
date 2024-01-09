@@ -40,6 +40,7 @@ fn main() {
 
         let json_values = toml::from_str::<serde_json::Value>(&contents).unwrap();
         let aggregates = json_values.get("aggregation").unwrap().as_array().unwrap();
+        let reduces = json_values.get("reduce").and_then(|v| v.as_object());
 
         eprintln!("file: {}", entry.path().display());
 
@@ -49,5 +50,15 @@ fn main() {
             .iter()
             .map(|v| serde_json::from_str(v.as_str().unwrap()).unwrap())
             .collect();
+
+        if let Some(r) = reduces {
+            r.iter().for_each(|(_k, v)| {
+                let a = v.get("aggregation").unwrap().as_array().unwrap();
+                let _aggregates: Vec<serde_json::Value> = a
+                    .iter()
+                    .map(|v| serde_json::from_str(v.as_str().unwrap()).unwrap())
+                    .collect();
+            });
+        }
     }
 }
