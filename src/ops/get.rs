@@ -77,7 +77,7 @@ pub async fn get_item(
     let rev = match params.get("rev") {
         Some(rev) => {
             if !latest && rev.as_str() != document.get_str("_rev").unwrap() {
-                return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
+                return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
             }
             Some(rev)
         }
@@ -613,21 +613,21 @@ fn extract_view_from_views<'a>(
     let design_mapping = match views.get(db) {
         Some(design_mapping) => design_mapping,
         None => {
-            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
+            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
         }
     };
 
     let view_group = match design_mapping.view_groups.get(design) {
         Some(view) => view,
         None => {
-            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
+            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
         }
     };
 
     let actual_view = match view_group.get(view) {
         Some(view) => view,
         None => {
-            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
+            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
         }
     };
 
@@ -920,7 +920,7 @@ mod tests {
                     .to_bytes();
                 let actual_json_body: Value = serde_json::from_slice(&body).unwrap();
                 let expected_json_body = json!({
-                    "error": "not found",
+                    "error": "not_found",
                 });
                 assert_json_eq!(actual_json_body, expected_json_body);
             }

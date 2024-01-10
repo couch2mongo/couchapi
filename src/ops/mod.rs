@@ -32,7 +32,7 @@ pub async fn check_conflict(
 
     // This would be weird - but we should say
     if document.is_none() {
-        return Ok((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
+        return Ok((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
     }
 
     // Looks like a standard conflict
@@ -49,7 +49,7 @@ pub async fn get_item_from_db(
         Ok(d) => match d {
             Some(d) => d,
             None => {
-                return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))));
+                return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
             }
         },
         Err(e) => {
@@ -116,7 +116,7 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(result.0, StatusCode::NOT_FOUND);
-        assert_json_eq!(result.1 .0, json!({ "error": "not found" }));
+        assert_json_eq!(result.1 .0, json!({ "error": "not_found" }));
     }
 
     #[tokio::test]
@@ -179,7 +179,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.0, StatusCode::NOT_FOUND);
-        assert_json_eq!(result.1 .0, json!({ "error": "not found" }));
+        assert_json_eq!(result.1 .0, json!({ "error": "not_found" }));
     }
 
     #[tokio::test]
