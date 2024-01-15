@@ -21,7 +21,6 @@ use crate::common::{
     print_request_response,
 };
 use crate::config::Settings;
-use crate::couchdb::read_through;
 use crate::db::MongoDB;
 use crate::ops::bulk::bulk_docs;
 use crate::ops::create_update::{new_item, new_item_with_id};
@@ -45,9 +44,6 @@ use axum::routing::{get, post, put};
 use axum::ServiceExt;
 use axum::{middleware, Router};
 use clap::{command, Parser};
-use http_body_util::BodyExt;
-use maplit::hashmap;
-use reqwest::Method;
 use serde_json::{json, Value};
 use std::error::Error;
 use std::sync::Arc;
@@ -206,30 +202,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 async fn server_info(
     State(state): State<Arc<AppState>>,
 ) -> Result<Response, JsonWithStatusCodeResponse> {
-    // Start the first async task
-    let version_info_task = state.db.get_version();
-
-    // Start the second async task
-    let couchdb_details_task = async {
-        match &state.couchdb_details {
-            Some(couchdb_details) => {
-                let response =
-                    read_through(couchdb_details, Method::GET, None, "/", &hashmap! {}).await;
-                match response {
-                    Ok(v) => {
-                        let body_bytes = BodyExt::collect(v.into_body()).await.unwrap().to_bytes();
-                        let body = String::from_utf8(body_bytes.to_vec()).unwrap();
-                        Ok(serde_json::from_str(&body).unwrap())
-                    }
-                    Err(e) => Err(e),
-                }
-            }
-            None => Ok(json!({})),
-        }
-    };
-
-    // Await both tasks to finish in parallel
-    let (version_result, couchdb_result) = tokio::join!(version_info_task, couchdb_details_task);
+    let version_result = state.db.get_version().await;
 
     // Handle the results for the first task
     let version_info = version_result
@@ -240,9 +213,6 @@ async fn server_info(
             )
         })
         .map(|v| json!(v))?;
-
-    // Extract the result for the second task
-    let couchdb_details = couchdb_result?;
 
     // Return a fake amount of data so that libraries like pycouchdb can work
     Ok(Json(json!({
@@ -261,7 +231,6 @@ async fn server_info(
             "name": "Green Man Gaming"
         },
         "mongo_details": version_info,
-        "upstream_couchdb": couchdb_details,
     }))
     .into_response())
 }
