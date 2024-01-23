@@ -1,6 +1,7 @@
 use crate::common::IfNoneMatch;
 use crate::config::DesignView;
 use crate::couchdb::read_through;
+use crate::not_found;
 use crate::ops::get_js::execute_script;
 use crate::ops::{get_item_from_db, JsonWithStatusCodeResponse};
 use crate::state::AppState;
@@ -77,11 +78,17 @@ pub async fn get_item(
     let rev = match params.get("rev") {
         Some(rev) => {
             if !latest && rev.as_str() != document.get_str("_rev").unwrap() {
-                return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
+                return Err(not_found!());
             }
             Some(rev)
         }
-        None => None,
+        None => {
+            if document.get_bool("_deleted").unwrap_or(false) {
+                return Err(not_found!());
+            }
+
+            None
+        }
     };
 
     let mut json_document = Json(json!(document)).into_response();
@@ -613,21 +620,21 @@ fn extract_view_from_views<'a>(
     let design_mapping = match views.get(db) {
         Some(design_mapping) => design_mapping,
         None => {
-            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
+            return Err(not_found!());
         }
     };
 
     let view_group = match design_mapping.view_groups.get(design) {
         Some(view) => view,
         None => {
-            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
+            return Err(not_found!());
         }
     };
 
     let actual_view = match view_group.get(view) {
         Some(view) => view,
         None => {
-            return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
+            return Err(not_found!());
         }
     };
 

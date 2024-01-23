@@ -13,6 +13,16 @@ use serde_json::{json, Value};
 use std::error::Error;
 use std::sync::Arc;
 
+#[macro_export]
+macro_rules! not_found {
+    () => {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "not_found"})),
+        )
+    };
+}
+
 pub type JsonWithStatusCodeResponse = (StatusCode, Json<Value>);
 
 /// check_conflict checks to see if the document exists and if it does, returns a 409
@@ -32,7 +42,7 @@ pub async fn check_conflict(
 
     // This would be weird - but we should say
     if document.is_none() {
-        return Ok((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
+        return Ok(not_found!());
     }
 
     // Looks like a standard conflict
@@ -49,7 +59,7 @@ pub async fn get_item_from_db(
         Ok(d) => match d {
             Some(d) => d,
             None => {
-                return Err((StatusCode::NOT_FOUND, Json(json!({"error": "not_found"}))));
+                return Err(not_found!());
             }
         },
         Err(e) => {
