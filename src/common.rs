@@ -130,7 +130,7 @@ pub async fn add_content_type_if_needed(
         let existing = headers
             .get(http::header::CONTENT_TYPE)
             .unwrap_or(&empty_existing);
-        warn!(existing = existing.to_str().unwrap(), "Adding content type");
+        tracing::debug!(existing = existing.to_str().unwrap(), "Adding content type");
         headers.insert(
             http::header::CONTENT_TYPE,
             "application/json".parse().unwrap(),
