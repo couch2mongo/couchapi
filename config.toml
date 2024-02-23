@@ -1,0 +1,13 @@
+debug = true
+mongodb_connect_string = "mongodb://127.0.0.1:27018/?directConnection=true&serverSelectionTimeoutMS=200"
+mongodb_database = "gmg"
+listen_address = "127.0.0.1:3000"
+view_folder = "./views"
+updates_folder = "./updates"
+log_level = "Debug"
+
+[couchdb_settings]
+url = "http://127.0.0.1:5984"
+read_through = false
+read_only = true
+
