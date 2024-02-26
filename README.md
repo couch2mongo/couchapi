@@ -5,31 +5,13 @@ scalability, flexibility, and efficiency. With the innovative use of a proxy
 layer developed in Rust, a modern systems programming language, this migration
 can be significantly simplified, making the transition seamless and efficient.
 
-## Proxy Approach and Rust: A Perfect Symbiosis
-
-A proxy layer serves as an intermediary, translating CouchDB API calls and
-queries into MongoDB's syntax. Implementing this layer in Rust brings the
-adds advantages of Rust's strong performance, reliability,
-and its ‘zero-cost abstraction’ principle, which ensures that abstractions
-do not incur runtime costs.
-
-## Benefits of the Rust-Based Proxy Approach
-
-1. **Efficient Migration**: With Rust's emphasis on performance and memory
-   safety, the proxy layer can handle high loads and complex translations with
-   efficiency and without crashes or security vulnerabilities, ensuring a
-   smooth migration process.
-2. **Code Preservation**: By using the Rust-based proxy, existing application
-   code remains largely untouched. This significantly reduces the time, cost,
-   and potential errors associated with substantial code rewrites, making the
-   migration process more manageable.
-3. **Error Handling**: Rust’s rich type system and its "panic" mechanism allow
-   the proxy to catch and handle errors gracefully, reducing the likelihood
-   of runtime errors during the migration.
+Green Man Gaming uses this in production, serving many transactions per second
+and without it, our store would end up offline. We're making this public so
+others can get as much use from it as we have!
 
 ## Requirements
 
-You need both Rust Stable and Nightly (we only use Nightly for rustfmt)!
+You need Rust Stable and Nightly (we only use Nightly for rustfmt)!
 
 ```bash
 rustup update stable
@@ -53,8 +35,8 @@ See `config.toml` for an example configuration file.
 ## Pro-tips for development
 
 If you get a random error about `traits` add `#[debug_handler]` to
-the relevant handler and you'll get actual information. Do not commit code
-with this handler!
+the relevant handler, and you'll get actual information. Please don't 
+commit code with this handler!
 
 ## Usage
 
